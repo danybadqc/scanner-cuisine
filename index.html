@@ -53,6 +53,7 @@
   .article .perime { color: #d93025; font-weight: bold; }
   .article .bientot { color: #e37400; font-weight: bold; }
   .article .qte-inv { min-width: 28px; text-align: center; font-size: 18px; }
+  .article .qte-inv.attente { color: #1a73e8; font-weight: bold; }
   .article button { width: 44px; margin: 0; padding: 8px; font-size: 20px; }
   .article button.confirmer { width: auto; background: #d93025; color: #fff; font-size: 14px; }
   #message-inv { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 16px; background: #fff; }
@@ -176,7 +177,7 @@
   </div>
 
 <script>
-  const VERSION = '0.7';
+  const VERSION = '0.8';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -440,6 +441,8 @@
     if (vue === 'inventaire') {
       if (flux) $('btn-stop').onclick();
       chargerInventaire();
+    } else {
+      envoyerTout();
     }
   });
 
@@ -449,6 +452,7 @@
   const sansAccents = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
   async function chargerInventaire() {
+    await envoyerTout();
     afficherInv('Chargement de l\'inventaire…', 'info');
     try {
       const r = await appeler({ action: 'inventaire' });
@@ -511,41 +515,78 @@
     const moins = document.createElement('button'); moins.className = 'secondaire'; moins.textContent = '−';
     const qte = document.createElement('span'); qte.className = 'qte-inv'; qte.textContent = a.quantite;
     const plus = document.createElement('button'); plus.className = 'secondaire'; plus.textContent = '+';
+    a.affichage = qte;
+    if (a.enAttente) qte.classList.add('attente');
 
-    let attente = null;
+    let confirmation = null;
     moins.onclick = () => {
+      if (a.quantite <= 0) return;
       // À 1, il faut confirmer : la ligne disparaîtra de l'inventaire
-      if (a.quantite <= 1 && !attente) {
+      if (a.quantite === 1 && !confirmation) {
         moins.textContent = 'Retirer ?'; moins.classList.add('confirmer');
-        attente = setTimeout(() => { attente = null; moins.textContent = '−'; moins.classList.remove('confirmer'); }, 3000);
+        confirmation = setTimeout(() => { confirmation = null; moins.textContent = '−'; moins.classList.remove('confirmer'); }, 3000);
         return;
       }
-      clearTimeout(attente); attente = null;
-      ajusterArticle(a, -1, el);
+      clearTimeout(confirmation); confirmation = null;
+      moins.textContent = '−'; moins.classList.remove('confirmer');
+      changer(a, -1);
     };
-    plus.onclick = () => ajusterArticle(a, 1, el);
+    plus.onclick = () => changer(a, 1);
     el.append(infos, moins, qte, plus);
     return el;
   }
 
-  async function ajusterArticle(a, delta, el) {
-    el.querySelectorAll('button').forEach(b => b.disabled = true);
-    try {
-      const r = await appeler({ action: 'ajuster', ligne: a.ligne, code: a.code, nom: a.nom, emplacement: a.emplacement, delta: delta });
-      if (r.code) ajouterHistorique(r);
-      if (r.supprime) {
-        await chargerInventaire();   // les lignes du Sheet ont bougé : on recharge
-        afficherInv(a.nom + ' retiré de l\'inventaire (' + a.emplacement + ').', 'ok');
-        return;
-      }
-      a.quantite = r.reste;
-      dessinerInventaire();
-      afficherInv((delta > 0 ? '+1 ' : '−1 ') + a.nom + ' : il en reste ' + r.reste + '.', 'ok');
-    } catch (err) {
-      afficherInv('Erreur : ' + err.message, 'erreur');
-      el.querySelectorAll('button').forEach(b => b.disabled = false);
-    }
+  // Le chiffre change tout de suite; l'envoi au Sheet part 0,9 s après la dernière pression,
+  // en un seul envoi pour toutes les pressions.
+  const DELAI_ENVOI = 900;
+  function changer(a, delta) {
+    a.quantite += delta;
+    a.enAttente = (a.enAttente || 0) + delta;
+    a.affichage.textContent = a.quantite;
+    a.affichage.classList.add('attente');
+    clearTimeout(a.minuterie);
+    // À 0, on envoie tout de suite (la ligne sera supprimée)
+    a.minuterie = setTimeout(() => envoyer(a), a.quantite === 0 ? 0 : DELAI_ENVOI);
   }
+
+  async function envoyer(a) {
+    clearTimeout(a.minuterie);
+    if (a.envoiEnCours) { await a.envoiEnCours; }      // un seul envoi à la fois par produit
+    if (!a.enAttente) return;
+    const delta = a.enAttente;
+    a.enAttente = 0;
+    a.envoiEnCours = (async () => {
+      try {
+        const r = await appeler({ action: 'ajuster', ligne: a.ligne, code: a.code, nom: a.nom, emplacement: a.emplacement, delta: delta });
+        if (r.code) ajouterHistorique(r);
+        if (r.supprime) {
+          // La ligne a disparu du Sheet : les lignes suivantes remontent d'un cran
+          articles = articles.filter(x => x !== a);
+          articles.forEach(x => { if (x.ligne > a.ligne) x.ligne--; });
+          dessinerInventaire();
+          afficherInv(a.nom + ' retiré de l\'inventaire (' + a.emplacement + ').', 'ok');
+        } else {
+          if (!a.enAttente) { a.quantite = r.reste; a.affichage.textContent = r.reste; a.affichage.classList.remove('attente'); }
+          afficherInv((delta > 0 ? '+' : '−') + Math.abs(delta) + ' ' + a.nom + ' : il en reste ' + r.reste + '.', 'ok');
+        }
+      } catch (err) {
+        afficherInv('Erreur : ' + err.message + ' La liste a été rechargée.', 'erreur');
+        a.enAttente = 0;
+        a.envoiEnCours = null;
+        await chargerInventaire();
+      }
+    })();
+    await a.envoiEnCours;
+    a.envoiEnCours = null;
+  }
+
+  // Envoie tout ce qui attend encore (avant de rafraîchir ou de quitter l'onglet)
+  async function envoyerTout() {
+    await Promise.all(articles.filter(a => a.enAttente || a.envoiEnCours).map(a => envoyer(a)));
+  }
+
+  window.addEventListener('pagehide', () => { envoyerTout(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) envoyerTout(); });
 
   $('recherche').oninput = dessinerInventaire;
   $('btn-rafraichir').onclick = chargerInventaire;
