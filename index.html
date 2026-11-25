@@ -37,7 +37,10 @@
   .boutons { display: flex; gap: 8px; }
   .boutons button { flex: 1; }
   #historique { margin-top: 16px; font-size: 15px; }
-  #historique div { padding: 6px 0; border-bottom: 1px solid #e3e6ea; }
+  #historique .entree { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #e3e6ea; }
+  #historique .entree span { flex: 1; }
+  #historique .entree button { width: auto; margin: 0; padding: 8px 12px; font-size: 14px; }
+  #historique .entree.annulee span { text-decoration: line-through; color: #80868b; }
   #photo, #photo-produit { display: none; }
   #btn-photo-produit { margin-top: 4px; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
@@ -358,9 +361,7 @@
       });
       const verbe = r.mode === 'ajouter' ? 'Ajouté' : 'Retiré';
       afficher(verbe + ' : ' + r.quantite + ' × ' + r.nom + ' (' + r.emplacement + '). Il en reste ' + r.reste + '.', 'ok');
-      const ligne = document.createElement('div');
-      ligne.textContent = (r.mode === 'ajouter' ? '+' : '−') + r.quantite + '  ' + r.nom + '  ·  ' + r.emplacement;
-      $('historique').prepend(ligne);
+      ajouterHistorique(r);
       fermerFiche();
     } catch (err) {
       afficher('Erreur : ' + err.message, 'erreur');
@@ -368,6 +369,32 @@
       $('btn-confirmer').disabled = false;
     }
   };
+
+  // ---------- Historique et annulation ----------
+  function ajouterHistorique(r) {
+    const ligne = document.createElement('div');
+    ligne.className = 'entree';
+    const texte = document.createElement('span');
+    texte.textContent = (r.mode === 'ajouter' ? '+' : '−') + r.quantite + '  ' + r.nom + '  ·  ' + r.emplacement;
+    const btn = document.createElement('button');
+    btn.className = 'secondaire';
+    btn.textContent = 'Annuler';
+    btn.onclick = async () => {
+      btn.disabled = true;
+      afficher('Annulation…', 'info');
+      try {
+        const a = await appeler({ action: 'annuler', code: r.code, mode: r.mode, quantite: r.quantite, emplacement: r.emplacement, avant: r.avant || null });
+        ligne.classList.add('annulee');
+        btn.remove();
+        afficher('Annulé : ' + (r.mode === 'ajouter' ? 'ajout' : 'retrait') + ' de ' + r.quantite + ' × ' + r.nom + '. Il en reste ' + a.reste + ' (' + r.emplacement + ').', 'ok');
+      } catch (err) {
+        btn.disabled = false;
+        afficher('Erreur : ' + err.message, 'erreur');
+      }
+    };
+    ligne.append(texte, btn);
+    $('historique').prepend(ligne);
+  }
 
   // ---------- Lecture des codes-barres ----------
   async function creerDetecteur() {
