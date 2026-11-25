@@ -197,7 +197,7 @@
   function verifierCode(code, format) {
     if (!/^\d+$/.test(code)) return 'Le code contient autre chose que des chiffres.';
     if (![8, 12, 13, 14].includes(code.length)) {
-      return 'Longueur invalide (' + code.length + ' chiffres). Un code de produit a 8, 12 ou 13 chiffres.';
+      return 'Longueur invalide (' + code.length + ' chiffres). Un code de produit a 8, 12, 13 ou 14 chiffres.';
     }
     let aVerifier = code;
     if (code.length === 8 && (format === 'upc_e' || (!format && '01'.includes(code[0]) && !chiffreControleOk(code)))) {
@@ -218,7 +218,7 @@
 
   function texteInventaire(inv) {
     if (!inv || !inv.length) return 'Pas encore dans l\'inventaire.';
-    return 'En inventaire : ' + inv.map(x => x.quantite + ' au ' + x.emplacement.toLowerCase()).join(', ').replace(/au congélateur/g, 'au congélateur') + '.';
+    return 'En inventaire : ' + inv.map(x => x.quantite + ' au ' + x.emplacement.toLowerCase()).join(', ') + '.';
   }
 
   async function traiterCode(code, format) {
@@ -279,7 +279,9 @@
 
     $('zone-scan').hidden = true;
     $('fiche').hidden = false;
-    if (mode === 'retirer' && (!r.inventaire || !r.inventaire.length)) {
+    const rienARetirer = mode === 'retirer' && (!r.inventaire || !r.inventaire.length);
+    $('btn-confirmer').disabled = rienARetirer;
+    if (rienARetirer) {
       afficher('Ce produit n\'est pas dans l\'inventaire. Passe en mode « J\'ajoute » si tu veux l\'ajouter.', 'erreur');
     } else {
       afficher(inconnu ? 'Remplis le nom, puis confirme.' : 'Vérifie les choix, puis confirme.', 'info');
