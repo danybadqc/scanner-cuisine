@@ -66,6 +66,7 @@
         <video id="video" playsinline muted></video>
         <div id="cadre"></div>
       </div>
+      <button id="btn-stop" class="secondaire" hidden>Désactiver la caméra</button>
       <button id="btn-camera">Démarrer la caméra</button>
       <button id="btn-photo" class="secondaire">Prendre une photo du code-barre</button>
       <input type="file" id="photo" accept="image/*" capture="environment">
@@ -316,12 +317,22 @@
       flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
       video.srcObject = flux;
       await video.play();
-      this.style.display = 'none';
+      $('btn-camera').hidden = true;
+      $('btn-stop').hidden = false;
       afficher('Place le code-barre dans le cadre.', 'info');
       boucle();
     } catch (e) {
       afficher('Impossible d\'ouvrir la caméra (' + e.name + '). Utilise le bouton photo.', 'erreur');
     }
+  };
+
+  $('btn-stop').onclick = () => {
+    if (flux) flux.getTracks().forEach(t => t.stop());
+    flux = null;
+    video.srcObject = null;
+    $('btn-stop').hidden = true;
+    $('btn-camera').hidden = false;
+    afficher('Caméra désactivée.', 'info');
   };
 
   $('btn-photo').onclick = () => $('photo').click();
