@@ -314,12 +314,15 @@
   $('photo-produit').onchange = async function () {
     const fichier = this.files[0];
     this.value = '';
-    if (!fichier || !courant) return;
+    const fiche = courant;     // la fiche ouverte au moment de la photo
+    if (!fichier || !fiche) return;
     const btn = $('btn-photo-produit');
     btn.disabled = true;
-    afficher('Identification du produit sur la photo…', 'info');
+    $('btn-confirmer').disabled = true;
+    afficher('Identification du produit sur la photo… (quelques secondes)', 'info');
     try {
-      const r = await appeler({ action: 'identifier', code: courant.code, image: await photoReduite(fichier) });
+      const r = await appeler({ action: 'identifier', code: fiche.code, image: await photoReduite(fichier) });
+      if (courant !== fiche) return;   // la fiche a été fermée entre-temps : on ignore la réponse
       if (!r.produit) {
         afficher('Je n\'ai pas reconnu le produit. Reprends la photo du devant de l\'emballage, ou tape le nom.', 'erreur');
         return;
@@ -327,12 +330,13 @@
       if (r.produit.nom) $('f-nom').value = r.produit.nom;
       if (r.produit.marque) $('f-marque').value = r.produit.marque;
       if (r.produit.format) $('f-format').value = r.produit.format;
-      if (!courant.source) courant.source = 'photo';
+      if (!fiche.source) fiche.source = 'photo';
       afficher('Produit identifié sur la photo. Vérifie le nom, la marque et le format, puis confirme.', 'ok');
     } catch (err) {
-      afficher('Erreur : ' + err.message, 'erreur');
+      if (courant === fiche) afficher('Erreur : ' + err.message, 'erreur');
     } finally {
       btn.disabled = false;
+      if (courant === fiche) $('btn-confirmer').disabled = mode === 'retirer' && !(fiche.inventaire || []).length;
     }
   };
 
