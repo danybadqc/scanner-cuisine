@@ -56,6 +56,10 @@
   .article .qte-inv.attente { color: #1a73e8; font-weight: bold; }
   .article button { width: 44px; margin: 0; padding: 8px; font-size: 20px; }
   .article button.confirmer { width: auto; background: #d93025; color: #fff; font-size: 14px; }
+  #btn-ajout { margin: 0 0 10px; }
+  #form-ajout { margin: 0 0 10px; }
+  #suggestions button { display: block; width: 100%; text-align: left; background: #f1f3f4; color: #1f2328; margin-top: 6px; padding: 10px 12px; font-size: 16px; }
+  #suggestions button small { display: block; color: #5f6368; font-size: 13px; }
   #message-inv { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 16px; background: #fff; }
   #version { text-align: center; color: #9aa0a6; font-size: 12px; margin: 8px 0 0; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
@@ -164,6 +168,40 @@
     </div>
 
     <div id="vue-inventaire" hidden>
+      <button id="btn-ajout">+ Ajouter un produit</button>
+      <div id="form-ajout" class="carte" hidden>
+        <h2>Ajouter sans scanner</h2>
+        <label for="a-nom">Produit *</label>
+        <input id="a-nom" type="text" autocomplete="off" placeholder="ex. Bananes, Riz jasmin">
+        <div id="suggestions"></div>
+        <p id="a-info" class="sous"></p>
+        <div id="a-details" hidden>
+          <label for="a-marque">Marque</label>
+          <input id="a-marque" type="text" placeholder="facultatif">
+          <label for="a-format">Format</label>
+          <input id="a-format" type="text" placeholder="ex. 1 kg, 6 unités">
+          <label for="a-categorie">Catégorie *</label>
+          <select id="a-categorie"></select>
+        </div>
+        <label>Emplacement</label>
+        <div class="bascule" id="a-emplacement">
+          <button data-v="Garde-manger">Garde-manger</button>
+          <button data-v="Frigo">Frigo</button>
+          <button data-v="Congélateur">Congélateur</button>
+        </div>
+        <label for="a-qte">Quantité</label>
+        <div class="qte">
+          <button id="a-moins" class="secondaire">−</button>
+          <input id="a-qte" type="number" inputmode="numeric" min="1" value="1">
+          <button id="a-plus" class="secondaire">+</button>
+        </div>
+        <label for="a-date">Date limite (facultatif)</label>
+        <input id="a-date" type="date">
+        <div class="boutons">
+          <button id="a-annuler" class="secondaire">Annuler</button>
+          <button id="a-confirmer">Ajouter</button>
+        </div>
+      </div>
       <div class="ligne">
         <input id="recherche" type="search" placeholder="Chercher un produit">
         <button id="btn-rafraichir" class="secondaire">Rafraîchir</button>
@@ -177,7 +215,7 @@
   </div>
 
 <script>
-  const VERSION = '0.8';
+  const VERSION = '0.9';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -584,6 +622,104 @@
   async function envoyerTout() {
     await Promise.all(articles.filter(a => a.enAttente || a.envoiEnCours).map(a => envoyer(a)));
   }
+
+  // ---------- Ajout sans scanner ----------
+  let produitsConnus = null;   // liste de l'onglet Produits, chargée à la première ouverture
+  let choisi = null;           // produit connu choisi dans les suggestions
+  let empAjout = '';
+  $('a-categorie').innerHTML = $('f-categorie').innerHTML;
+
+  async function ouvrirAjout() {
+    choisi = null; empAjout = '';
+    ['a-nom', 'a-marque', 'a-format', 'a-date'].forEach(id => $(id).value = '');
+    $('a-categorie').value = ''; $('a-qte').value = 1;
+    bascule('a-emplacement', '');
+    $('suggestions').innerHTML = '';
+    majInfo();
+    $('btn-ajout').hidden = true;
+    $('form-ajout').hidden = false;
+    $('a-nom').focus();
+    if (!produitsConnus) {
+      try { produitsConnus = (await appeler({ action: 'produits' })).produits || []; }
+      catch (err) { produitsConnus = []; afficherInv('Suggestions indisponibles : ' + err.message, 'erreur'); }
+      montrerSuggestions();
+    }
+  }
+  function fermerAjout() { $('form-ajout').hidden = true; $('btn-ajout').hidden = false; }
+
+  function majInfo() {
+    const nom = $('a-nom').value.trim();
+    if (choisi) {
+      $('a-details').hidden = true;
+      $('a-info').textContent = 'Produit connu' + ([choisi.marque, choisi.format].filter(Boolean).length ? ' : ' + [choisi.marque, choisi.format].filter(Boolean).join(' · ') : '') +
+        (choisi.code ? '' : ' (sans code-barre)');
+    } else {
+      $('a-details').hidden = !nom;
+      $('a-info').textContent = nom ? 'Nouveau produit, sans code-barre : il sera proposé la prochaine fois.' : '';
+    }
+  }
+
+  function choisir(prod) {
+    choisi = prod;
+    $('a-nom').value = prod.nom;
+    $('suggestions').innerHTML = '';
+    if (prod.emplacement) { empAjout = prod.emplacement; bascule('a-emplacement', empAjout); }
+    majInfo();
+  }
+
+  function montrerSuggestions() {
+    const zone = $('suggestions');
+    zone.innerHTML = '';
+    const texte = sansAccents($('a-nom').value.trim());
+    if (!texte || choisi || !produitsConnus) return;
+    // Nom identique à un produit connu : on le choisit d'office
+    const exact = produitsConnus.filter(p => sansAccents(p.nom) === texte);
+    if (exact.length === 1) { choisi = exact[0]; if (exact[0].emplacement && !empAjout) { empAjout = exact[0].emplacement; bascule('a-emplacement', empAjout); } majInfo(); return; }
+    produitsConnus.filter(p => sansAccents(p.nom + ' ' + p.marque).includes(texte)).slice(0, 6).forEach(p => {
+      const b = document.createElement('button');
+      b.textContent = p.nom;
+      const sous = document.createElement('small');
+      sous.textContent = [p.marque, p.format, p.code ? '' : 'sans code-barre'].filter(Boolean).join(' · ');
+      b.append(sous);
+      b.onclick = () => choisir(p);
+      zone.append(b);
+    });
+    if (zone.children.length) $('a-info').textContent = 'Touche un produit proposé, ou continue d\'écrire pour en créer un nouveau.';
+  }
+
+  $('btn-ajout').onclick = ouvrirAjout;
+  $('a-annuler').onclick = () => { fermerAjout(); afficherInv('Ajout annulé.', 'info'); };
+  $('a-nom').oninput = () => { choisi = null; majInfo(); montrerSuggestions(); };
+  document.querySelectorAll('#a-emplacement button').forEach(b => b.onclick = () => { empAjout = b.dataset.v; bascule('a-emplacement', empAjout); });
+  $('a-moins').onclick = () => { $('a-qte').value = Math.max(1, (parseInt($('a-qte').value) || 1) - 1); };
+  $('a-plus').onclick = () => { $('a-qte').value = (parseInt($('a-qte').value) || 0) + 1; };
+
+  $('a-confirmer').onclick = async () => {
+    const nom = $('a-nom').value.trim();
+    if (!nom) { afficherInv('Écris le nom du produit.', 'erreur'); return; }
+    if (!empAjout) { afficherInv('Choisis l\'emplacement.', 'erreur'); return; }
+    if (!choisi && !$('a-categorie').value) { afficherInv('Choisis la catégorie.', 'erreur'); return; }
+    const produit = choisi
+      ? { nom: choisi.nom, marque: choisi.marque, format: choisi.format, categorie: choisi.categorie }
+      : { nom: nom, marque: $('a-marque').value.trim(), format: $('a-format').value.trim(), categorie: $('a-categorie').value };
+    $('a-confirmer').disabled = true;
+    afficherInv('Ajout en cours…', 'info');
+    try {
+      const r = await appeler({
+        action: 'ajouterManuel', code: choisi ? choisi.code : '', produit: produit,
+        quantite: parseInt($('a-qte').value) || 1, emplacement: empAjout, dateLimite: $('a-date').value || ''
+      });
+      if (r.code) ajouterHistorique(r);
+      if (!choisi) produitsConnus = null;   // le nouveau produit sera dans les suggestions la prochaine fois
+      fermerAjout();
+      await chargerInventaire();
+      afficherInv('Ajouté : ' + r.quantite + ' × ' + r.nom + ' (' + r.emplacement + '). Il y en a ' + r.reste + '.', 'ok');
+    } catch (err) {
+      afficherInv('Erreur : ' + err.message, 'erreur');
+    } finally {
+      $('a-confirmer').disabled = false;
+    }
+  };
 
   window.addEventListener('pagehide', () => { envoyerTout(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) envoyerTout(); });
