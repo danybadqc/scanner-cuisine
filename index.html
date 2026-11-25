@@ -6,31 +6,46 @@
 <meta name="theme-color" content="#1a73e8">
 <title>Scanner cuisine</title>
 <style>
+  * { box-sizing: border-box; }
   body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #f6f7f9; color: #1f2328; }
   h1 { font-size: 20px; margin: 0 0 12px; }
-  #video-zone { position: relative; width: 100%; aspect-ratio: 3 / 4; background: #000; border-radius: 12px; overflow: hidden; }
-  video { width: 100%; height: 100%; object-fit: cover; }
-  #cadre { position: absolute; left: 10%; right: 10%; top: 38%; height: 24%; border: 3px solid #ffffffcc; border-radius: 8px; }
+  h2 { font-size: 18px; margin: 0 0 4px; }
   button { width: 100%; padding: 14px; font-size: 17px; border: 0; border-radius: 10px; margin-top: 10px; background: #1a73e8; color: #fff; }
   button.secondaire { background: #e3e6ea; color: #1f2328; }
-  #message { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 16px; min-height: 22px; background: #fff; }
+  button:disabled { opacity: .5; }
+  input, select { width: 100%; padding: 12px; font-size: 17px; border: 1px solid #c4c8cd; border-radius: 10px; background: #fff; }
+  label { display: block; font-size: 14px; color: #5f6368; margin: 12px 0 4px; }
+  .carte { background: #fff; padding: 16px; border-radius: 12px; margin-top: 12px; }
+  .bascule { display: flex; gap: 6px; }
+  .bascule button { margin: 0; background: #e3e6ea; color: #1f2328; padding: 12px 6px; font-size: 16px; }
+  .bascule button.actif { background: #1a73e8; color: #fff; }
+  #mode-zone .bascule button.actif[data-v="retirer"] { background: #d93025; }
+  #video-zone { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #000; border-radius: 12px; overflow: hidden; margin-top: 12px; }
+  video { width: 100%; height: 100%; object-fit: cover; }
+  #cadre { position: absolute; left: 10%; right: 10%; top: 32%; height: 36%; border: 3px solid #ffffffcc; border-radius: 8px; }
+  #message { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 16px; background: #fff; }
   .ok { border-left: 6px solid #1e8e3e; }
   .erreur { border-left: 6px solid #d93025; }
   .info { border-left: 6px solid #1a73e8; }
   .ligne { display: flex; gap: 8px; margin-top: 10px; }
-  .ligne input { flex: 1; min-width: 0; padding: 12px; font-size: 17px; border: 1px solid #c4c8cd; border-radius: 10px; }
+  .ligne input { flex: 1; min-width: 0; }
   .ligne button { width: auto; margin: 0; padding: 12px 16px; }
+  .qte { display: flex; align-items: center; gap: 10px; }
+  .qte button { width: 56px; margin: 0; font-size: 22px; padding: 8px; }
+  .qte input { width: 80px; text-align: center; }
+  .sous { color: #5f6368; font-size: 15px; margin: 2px 0; }
+  .boutons { display: flex; gap: 8px; }
+  .boutons button { flex: 1; }
   #historique { margin-top: 16px; font-size: 15px; }
   #historique div { padding: 6px 0; border-bottom: 1px solid #e3e6ea; }
   #photo { display: none; }
-  #config { background: #fff; padding: 16px; border-radius: 12px; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
 </style>
 </head>
 <body>
   <h1>Scanner cuisine</h1>
 
-  <div id="config" hidden>
+  <div id="config" class="carte" hidden>
     <p>Première utilisation : entre la clé secrète de ton script.</p>
     <div class="ligne">
       <input id="champ-cle" type="text" autocomplete="off" placeholder="Clé secrète">
@@ -38,19 +53,82 @@
     </div>
   </div>
 
-  <div id="scanner" hidden>
-    <div id="video-zone">
-      <video id="video" playsinline muted></video>
-      <div id="cadre"></div>
+  <div id="app" hidden>
+    <div id="mode-zone">
+      <div class="bascule" id="bascule-mode">
+        <button data-v="ajouter" class="actif">+ J'ajoute</button>
+        <button data-v="retirer">− J'ai utilisé</button>
+      </div>
     </div>
 
-    <button id="btn-camera">Démarrer la caméra</button>
-    <button id="btn-photo" class="secondaire">Prendre une photo du code-barre</button>
-    <input type="file" id="photo" accept="image/*" capture="environment">
+    <div id="zone-scan">
+      <div id="video-zone">
+        <video id="video" playsinline muted></video>
+        <div id="cadre"></div>
+      </div>
+      <button id="btn-camera">Démarrer la caméra</button>
+      <button id="btn-photo" class="secondaire">Prendre une photo du code-barre</button>
+      <input type="file" id="photo" accept="image/*" capture="environment">
+      <div class="ligne">
+        <input id="code-manuel" type="text" inputmode="numeric" placeholder="Ou taper le code">
+        <button id="btn-manuel">OK</button>
+      </div>
+    </div>
 
-    <div class="ligne">
-      <input id="code-manuel" type="text" inputmode="numeric" placeholder="Ou taper le code">
-      <button id="btn-manuel">Ajouter</button>
+    <div id="fiche" class="carte" hidden>
+      <div id="fiche-titre"></div>
+
+      <div id="champs-produit" hidden>
+        <label for="f-nom">Nom du produit *</label>
+        <input id="f-nom" type="text" placeholder="ex. Riz jasmin">
+        <label for="f-marque">Marque</label>
+        <input id="f-marque" type="text" placeholder="ex. Kirkland">
+        <label for="f-format">Format</label>
+        <input id="f-format" type="text" placeholder="ex. 8 kg">
+      </div>
+
+      <div id="champ-categorie">
+        <label for="f-categorie">Catégorie</label>
+        <select id="f-categorie">
+          <option value="">— Choisir —</option>
+          <option>Viandes et poissons</option>
+          <option>Fruits et légumes</option>
+          <option>Produits laitiers et œufs</option>
+          <option>Boulangerie</option>
+          <option>Pâtes, riz et céréales</option>
+          <option>Conserves</option>
+          <option>Sauces et condiments</option>
+          <option>Épices et assaisonnements</option>
+          <option>Surgelés</option>
+          <option>Collations</option>
+          <option>Boissons</option>
+          <option>Autre</option>
+        </select>
+      </div>
+
+      <label>Emplacement</label>
+      <div class="bascule" id="bascule-emplacement">
+        <button data-v="Garde-manger">Garde-manger</button>
+        <button data-v="Frigo">Frigo</button>
+        <button data-v="Congélateur">Congélateur</button>
+      </div>
+
+      <label for="f-qte">Quantité</label>
+      <div class="qte">
+        <button id="moins" class="secondaire">−</button>
+        <input id="f-qte" type="number" inputmode="numeric" min="1" value="1">
+        <button id="plus" class="secondaire">+</button>
+      </div>
+
+      <div id="champ-date">
+        <label for="f-date">Date limite (facultatif)</label>
+        <input id="f-date" type="date">
+      </div>
+
+      <div class="boutons">
+        <button id="btn-annuler" class="secondaire">Annuler</button>
+        <button id="btn-confirmer">Confirmer</button>
+      </div>
     </div>
 
     <div id="message" class="info">Prêt à scanner.</div>
@@ -61,100 +139,179 @@
 <script>
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'];
+  const $ = id => document.getElementById(id);
 
-  const video = document.getElementById('video');
-  const message = document.getElementById('message');
-  const historique = document.getElementById('historique');
-  let detecteur = null;
-  let flux = null;
-  let enPause = false;
-  let dernierCode = '';
-  let dernierMoment = 0;
+  const video = $('video');
+  let detecteur = null, flux = null;
+  let occupe = false;          // une fiche est ouverte ou une demande est en cours
+  let mode = 'ajouter';
+  let emplacement = '';
+  let courant = null;          // résultat de la recherche en cours
 
-  function lireCle() {
-    try { return localStorage.getItem('cleScanner') || ''; } catch (e) { return ''; }
-  }
-  function ecrireCle(cle) {
-    try { localStorage.setItem('cleScanner', cle); } catch (e) {}
-  }
+  // ---------- Clé secrète ----------
+  function lireCle() { try { return localStorage.getItem('cleScanner') || ''; } catch (e) { return ''; } }
+  function ecrireCle(c) { try { localStorage.setItem('cleScanner', c); } catch (e) {} }
   function afficherEcran() {
     const aCle = !!lireCle();
-    document.getElementById('config').hidden = aCle;
-    document.getElementById('scanner').hidden = !aCle;
+    $('config').hidden = aCle;
+    $('app').hidden = !aCle;
+  }
+  $('btn-cle').onclick = () => { const c = $('champ-cle').value.trim(); if (c) { ecrireCle(c); afficherEcran(); } };
+  $('lien-cle').onclick = ev => { ev.preventDefault(); ecrireCle(''); afficherEcran(); };
+
+  // ---------- Affichage ----------
+  function afficher(texte, type) { $('message').textContent = texte; $('message').className = type; }
+  function bascule(idZone, valeur) {
+    document.querySelectorAll('#' + idZone + ' button').forEach(b => b.classList.toggle('actif', b.dataset.v === valeur));
+  }
+  document.querySelectorAll('#bascule-mode button').forEach(b => b.onclick = () => {
+    if (occupe) return;
+    mode = b.dataset.v; bascule('bascule-mode', mode);
+    afficher(mode === 'ajouter' ? 'Mode ajout : scanne ce que tu ranges.' : 'Mode retrait : scanne ce que tu as utilisé ou jeté.', 'info');
+  });
+  document.querySelectorAll('#bascule-emplacement button').forEach(b => b.onclick = () => {
+    emplacement = b.dataset.v; bascule('bascule-emplacement', emplacement);
+  });
+  $('moins').onclick = () => { $('f-qte').value = Math.max(1, (parseInt($('f-qte').value) || 1) - 1); };
+  $('plus').onclick = () => { $('f-qte').value = (parseInt($('f-qte').value) || 0) + 1; };
+
+  // ---------- Échanges avec le script ----------
+  async function appeler(donnees) {
+    donnees.cle = lireCle();
+    const rep = await fetch(URL_SCRIPT, { method: 'POST', body: JSON.stringify(donnees) });
+    const r = await rep.json();
+    if (!r.ok) throw new Error(r.erreur || 'Erreur inconnue');
+    return r;
   }
 
-  document.getElementById('btn-cle').onclick = function () {
-    const cle = document.getElementById('champ-cle').value.trim();
-    if (!cle) return;
-    ecrireCle(cle);
-    afficherEcran();
-  };
-  document.getElementById('lien-cle').onclick = function (ev) {
-    ev.preventDefault();
-    ecrireCle('');
-    afficherEcran();
-  };
-
-  function afficher(texte, type) {
-    message.textContent = texte;
-    message.className = type;
+  function texteInventaire(inv) {
+    if (!inv || !inv.length) return 'Pas encore dans l\'inventaire.';
+    return 'En inventaire : ' + inv.map(x => x.quantite + ' au ' + x.emplacement.toLowerCase()).join(', ').replace(/au congélateur/g, 'au congélateur') + '.';
   }
 
+  async function traiterCode(code) {
+    if (occupe) return;
+    occupe = true;
+    if (navigator.vibrate) navigator.vibrate(120);
+    afficher('Recherche du produit ' + code + '…', 'info');
+    try {
+      const r = await appeler({ action: 'chercher', code: code });
+      courant = r;
+      ouvrirFiche(r);
+    } catch (err) {
+      afficher('Erreur : ' + err.message, 'erreur');
+      occupe = false;
+    }
+  }
+
+  function ouvrirFiche(r) {
+    const p = r.produit;
+    const inconnu = !p;
+    const titre = $('fiche-titre');
+    titre.innerHTML = '';
+    const h = document.createElement('h2');
+    const s1 = document.createElement('p'); s1.className = 'sous';
+    const s2 = document.createElement('p'); s2.className = 'sous';
+    if (inconnu) {
+      h.textContent = 'Produit inconnu';
+      s1.textContent = 'Code ' + r.code + ' : dis-moi ce que c\'est, je m\'en souviendrai.';
+    } else {
+      h.textContent = p.nom || '(sans nom)';
+      s1.textContent = [p.marque, p.format].filter(Boolean).join(' · ') + (r.source === 'off' ? '  (trouvé sur Open Food Facts)' : '');
+    }
+    s2.textContent = texteInventaire(r.inventaire);
+    titre.append(h, s1, s2);
+
+    // Champs du produit : affichés si inconnu, ou si le nom trouvé est vide
+    const montrerChamps = inconnu || !p.nom;
+    $('champs-produit').hidden = !montrerChamps;
+    $('f-nom').value = p ? (p.nom || '') : '';
+    $('f-marque').value = p ? (p.marque || '') : '';
+    $('f-format').value = p ? (p.format || '') : '';
+
+    // Catégorie : demandée seulement si on ne la connaît pas encore
+    $('f-categorie').value = p && p.categorie ? p.categorie : '';
+    $('champ-categorie').hidden = mode === 'retirer' || !!(p && p.categorie);
+
+    // Emplacement par défaut
+    if (mode === 'retirer' && r.inventaire && r.inventaire.length) emplacement = r.inventaire[0].emplacement;
+    else emplacement = (p && p.emplacement) || '';
+    bascule('bascule-emplacement', emplacement);
+
+    $('f-qte').value = 1;
+    $('f-date').value = '';
+    $('champ-date').hidden = mode === 'retirer';
+    $('btn-confirmer').textContent = mode === 'ajouter' ? 'Ajouter à l\'inventaire' : 'Retirer de l\'inventaire';
+
+    $('zone-scan').hidden = true;
+    $('fiche').hidden = false;
+    if (mode === 'retirer' && (!r.inventaire || !r.inventaire.length)) {
+      afficher('Ce produit n\'est pas dans l\'inventaire. Passe en mode « J\'ajoute » si tu veux l\'ajouter.', 'erreur');
+    } else {
+      afficher(inconnu ? 'Remplis le nom, puis confirme.' : 'Vérifie les choix, puis confirme.', 'info');
+    }
+  }
+
+  function fermerFiche() {
+    $('fiche').hidden = true;
+    $('zone-scan').hidden = false;
+    courant = null;
+    setTimeout(() => { occupe = false; }, 1200);
+  }
+
+  $('btn-annuler').onclick = () => { fermerFiche(); afficher('Annulé. Prêt à scanner.', 'info'); };
+
+  $('btn-confirmer').onclick = async () => {
+    if (!courant) return;
+    const nom = $('f-nom').value.trim();
+    if (!nom) { afficher('Le nom du produit est obligatoire.', 'erreur'); $('champs-produit').hidden = false; return; }
+    if (!emplacement) { afficher('Choisis l\'emplacement.', 'erreur'); return; }
+    if (mode === 'ajouter' && !$('champ-categorie').hidden && !$('f-categorie').value) { afficher('Choisis la catégorie.', 'erreur'); return; }
+    $('btn-confirmer').disabled = true;
+    afficher('Enregistrement…', 'info');
+    try {
+      const r = await appeler({
+        action: 'enregistrer', code: courant.code, mode: mode, source: courant.source,
+        quantite: parseInt($('f-qte').value) || 1, emplacement: emplacement, dateLimite: $('f-date').value || '',
+        produit: { nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value }
+      });
+      const verbe = r.mode === 'ajouter' ? 'Ajouté' : 'Retiré';
+      afficher(verbe + ' : ' + r.quantite + ' × ' + r.nom + ' (' + r.emplacement + '). Il en reste ' + r.reste + '.', 'ok');
+      const ligne = document.createElement('div');
+      ligne.textContent = (r.mode === 'ajouter' ? '+' : '−') + r.quantite + '  ' + r.nom + '  ·  ' + r.emplacement;
+      $('historique').prepend(ligne);
+      fermerFiche();
+    } catch (err) {
+      afficher('Erreur : ' + err.message, 'erreur');
+    } finally {
+      $('btn-confirmer').disabled = false;
+    }
+  };
+
+  // ---------- Lecture des codes-barres ----------
   async function creerDetecteur() {
     if (!('BarcodeDetector' in window)) return null;
     try {
       const supportes = await BarcodeDetector.getSupportedFormats();
       const choisis = formats.filter(f => supportes.includes(f));
       return new BarcodeDetector({ formats: choisis.length ? choisis : formats });
-    } catch (e) {
-      return null;
-    }
-  }
-
-  async function enregistrer(code) {
-    const maintenant = Date.now();
-    if (code === dernierCode && maintenant - dernierMoment < 4000) return;
-    dernierCode = code;
-    dernierMoment = maintenant;
-    enPause = true;
-    if (navigator.vibrate) navigator.vibrate(150);
-    afficher('Enregistrement de ' + code + '…', 'info');
-    try {
-      const reponse = await fetch(URL_SCRIPT, {
-        method: 'POST',
-        body: JSON.stringify({ cle: lireCle(), code: code })
-      });
-      const r = await reponse.json();
-      if (!r.ok) throw new Error(r.erreur || 'Erreur inconnue');
-      afficher('Enregistré : ' + r.code, 'ok');
-      const ligne = document.createElement('div');
-      ligne.textContent = r.date.slice(11, 16) + '  ·  ' + r.code;
-      historique.prepend(ligne);
-      setTimeout(function () { enPause = false; }, 1500);
-    } catch (err) {
-      afficher('Erreur : ' + err.message, 'erreur');
-      dernierCode = '';
-      enPause = false;
-    }
+    } catch (e) { return null; }
   }
 
   async function boucle() {
     if (!flux) return;
-    if (!enPause && video.readyState >= 2) {
+    if (!occupe && video.readyState >= 2) {
       try {
-        const resultats = await detecteur.detect(video);
-        if (resultats.length) enregistrer(resultats[0].rawValue);
+        const res = await detecteur.detect(video);
+        if (res.length) traiterCode(res[0].rawValue);
       } catch (e) { /* image suivante */ }
     }
     requestAnimationFrame(boucle);
   }
 
-  document.getElementById('btn-camera').onclick = async function () {
+  $('btn-camera').onclick = async function () {
     detecteur = detecteur || await creerDetecteur();
-    if (!detecteur) {
-      afficher('La lecture en direct n\'est pas offerte sur cet appareil. Utilise le bouton « Prendre une photo ».', 'erreur');
-      return;
-    }
+    if (!detecteur) { afficher('La lecture en direct n\'est pas offerte sur cet appareil. Utilise le bouton photo.', 'erreur'); return; }
     try {
       flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
       video.srcObject = flux;
@@ -163,45 +320,30 @@
       afficher('Place le code-barre dans le cadre.', 'info');
       boucle();
     } catch (e) {
-      afficher('Impossible d\'ouvrir la caméra (' + e.name + '). Utilise le bouton « Prendre une photo ».', 'erreur');
+      afficher('Impossible d\'ouvrir la caméra (' + e.name + '). Utilise le bouton photo.', 'erreur');
     }
   };
 
-  document.getElementById('btn-photo').onclick = function () {
-    document.getElementById('photo').click();
-  };
-
-  document.getElementById('photo').onchange = async function () {
+  $('btn-photo').onclick = () => $('photo').click();
+  $('photo').onchange = async function () {
     const fichier = this.files[0];
     this.value = '';
     if (!fichier) return;
     detecteur = detecteur || await creerDetecteur();
-    if (!detecteur) {
-      afficher('Cet appareil ne peut pas lire les codes-barres. Tape le code à la main.', 'erreur');
-      return;
-    }
+    if (!detecteur) { afficher('Cet appareil ne peut pas lire les codes-barres. Tape le code à la main.', 'erreur'); return; }
     afficher('Lecture de la photo…', 'info');
     try {
-      const image = await createImageBitmap(fichier);
-      const resultats = await detecteur.detect(image);
-      if (resultats.length) {
-        dernierCode = '';
-        enregistrer(resultats[0].rawValue);
-      } else {
-        afficher('Aucun code-barre trouvé. Reprends la photo de plus près, bien éclairée.', 'erreur');
-      }
-    } catch (e) {
-      afficher('Erreur de lecture : ' + e.message, 'erreur');
-    }
+      const res = await detecteur.detect(await createImageBitmap(fichier));
+      if (res.length) traiterCode(res[0].rawValue);
+      else afficher('Aucun code-barre trouvé. Reprends la photo de plus près, bien éclairée.', 'erreur');
+    } catch (e) { afficher('Erreur de lecture : ' + e.message, 'erreur'); }
   };
 
-  document.getElementById('btn-manuel').onclick = function () {
-    const champ = document.getElementById('code-manuel');
-    const code = champ.value.replace(/\D/g, '');
+  $('btn-manuel').onclick = () => {
+    const code = $('code-manuel').value.replace(/\D/g, '');
     if (!code) return;
-    champ.value = '';
-    dernierCode = '';
-    enregistrer(code);
+    $('code-manuel').value = '';
+    traiterCode(code);
   };
 
   afficherEcran();
