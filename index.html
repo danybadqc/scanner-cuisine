@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a73e8">
+<title>Scanner cuisine</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #f6f7f9; color: #1f2328; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  #video-zone { position: relative; width: 100%; aspect-ratio: 3 / 4; background: #000; border-radius: 12px; overflow: hidden; }
+  video { width: 100%; height: 100%; object-fit: cover; }
+  #cadre { position: absolute; left: 10%; right: 10%; top: 38%; height: 24%; border: 3px solid #ffffffcc; border-radius: 8px; }
+  button { width: 100%; padding: 14px; font-size: 17px; border: 0; border-radius: 10px; margin-top: 10px; background: #1a73e8; color: #fff; }
+  button.secondaire { background: #e3e6ea; color: #1f2328; }
+  #message { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 16px; min-height: 22px; background: #fff; }
+  .ok { border-left: 6px solid #1e8e3e; }
+  .erreur { border-left: 6px solid #d93025; }
+  .info { border-left: 6px solid #1a73e8; }
+  .ligne { display: flex; gap: 8px; margin-top: 10px; }
+  .ligne input { flex: 1; min-width: 0; padding: 12px; font-size: 17px; border: 1px solid #c4c8cd; border-radius: 10px; }
+  .ligne button { width: auto; margin: 0; padding: 12px 16px; }
+  #historique { margin-top: 16px; font-size: 15px; }
+  #historique div { padding: 6px 0; border-bottom: 1px solid #e3e6ea; }
+  #photo { display: none; }
+  #config { background: #fff; padding: 16px; border-radius: 12px; }
+  #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
+</style>
+</head>
+<body>
+  <h1>Scanner cuisine</h1>
+
+  <div id="config" hidden>
+    <p>Première utilisation : entre la clé secrète de ton script.</p>
+    <div class="ligne">
+      <input id="champ-cle" type="text" autocomplete="off" placeholder="Clé secrète">
+      <button id="btn-cle">OK</button>
+    </div>
+  </div>
+
+  <div id="scanner" hidden>
+    <div id="video-zone">
+      <video id="video" playsinline muted></video>
+      <div id="cadre"></div>
+    </div>
+
+    <button id="btn-camera">Démarrer la caméra</button>
+    <button id="btn-photo" class="secondaire">Prendre une photo du code-barre</button>
+    <input type="file" id="photo" accept="image/*" capture="environment">
+
+    <div class="ligne">
+      <input id="code-manuel" type="text" inputmode="numeric" placeholder="Ou taper le code">
+      <button id="btn-manuel">Ajouter</button>
+    </div>
+
+    <div id="message" class="info">Prêt à scanner.</div>
+    <div id="historique"></div>
+    <a id="lien-cle" href="#">Changer la clé secrète</a>
+  </div>
+
+<script>
+  const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
+  const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39'];
+
+  const video = document.getElementById('video');
+  const message = document.getElementById('message');
+  const historique = document.getElementById('historique');
+  let detecteur = null;
+  let flux = null;
+  let enPause = false;
+  let dernierCode = '';
+  let dernierMoment = 0;
+
+  function lireCle() {
+    try { return localStorage.getItem('cleScanner') || ''; } catch (e) { return ''; }
+  }
+  function ecrireCle(cle) {
+    try { localStorage.setItem('cleScanner', cle); } catch (e) {}
+  }
+  function afficherEcran() {
+    const aCle = !!lireCle();
+    document.getElementById('config').hidden = aCle;
+    document.getElementById('scanner').hidden = !aCle;
+  }
+
+  document.getElementById('btn-cle').onclick = function () {
+    const cle = document.getElementById('champ-cle').value.trim();
+    if (!cle) return;
+    ecrireCle(cle);
+    afficherEcran();
+  };
+  document.getElementById('lien-cle').onclick = function (ev) {
+    ev.preventDefault();
+    ecrireCle('');
+    afficherEcran();
+  };
+
+  function afficher(texte, type) {
+    message.textContent = texte;
+    message.className = type;
+  }
+
+  async function creerDetecteur() {
+    if (!('BarcodeDetector' in window)) return null;
+    try {
+      const supportes = await BarcodeDetector.getSupportedFormats();
+      const choisis = formats.filter(f => supportes.includes(f));
+      return new BarcodeDetector({ formats: choisis.length ? choisis : formats });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function enregistrer(code) {
+    const maintenant = Date.now();
+    if (code === dernierCode && maintenant - dernierMoment < 4000) return;
+    dernierCode = code;
+    dernierMoment = maintenant;
+    enPause = true;
+    if (navigator.vibrate) navigator.vibrate(150);
+    afficher('Enregistrement de ' + code + '…', 'info');
+    try {
+      const reponse = await fetch(URL_SCRIPT, {
+        method: 'POST',
+        body: JSON.stringify({ cle: lireCle(), code: code })
+      });
+      const r = await reponse.json();
+      if (!r.ok) throw new Error(r.erreur || 'Erreur inconnue');
+      afficher('Enregistré : ' + r.code, 'ok');
+      const ligne = document.createElement('div');
+      ligne.textContent = r.date.slice(11, 16) + '  ·  ' + r.code;
+      historique.prepend(ligne);
+      setTimeout(function () { enPause = false; }, 1500);
+    } catch (err) {
+      afficher('Erreur : ' + err.message, 'erreur');
+      dernierCode = '';
+      enPause = false;
+    }
+  }
+
+  async function boucle() {
+    if (!flux) return;
+    if (!enPause && video.readyState >= 2) {
+      try {
+        const resultats = await detecteur.detect(video);
+        if (resultats.length) enregistrer(resultats[0].rawValue);
+      } catch (e) { /* image suivante */ }
+    }
+    requestAnimationFrame(boucle);
+  }
+
+  document.getElementById('btn-camera').onclick = async function () {
+    detecteur = detecteur || await creerDetecteur();
+    if (!detecteur) {
+      afficher('La lecture en direct n\'est pas offerte sur cet appareil. Utilise le bouton « Prendre une photo ».', 'erreur');
+      return;
+    }
+    try {
+      flux = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      video.srcObject = flux;
+      await video.play();
+      this.style.display = 'none';
+      afficher('Place le code-barre dans le cadre.', 'info');
+      boucle();
+    } catch (e) {
+      afficher('Impossible d\'ouvrir la caméra (' + e.name + '). Utilise le bouton « Prendre une photo ».', 'erreur');
+    }
+  };
+
+  document.getElementById('btn-photo').onclick = function () {
+    document.getElementById('photo').click();
+  };
+
+  document.getElementById('photo').onchange = async function () {
+    const fichier = this.files[0];
+    this.value = '';
+    if (!fichier) return;
+    detecteur = detecteur || await creerDetecteur();
+    if (!detecteur) {
+      afficher('Cet appareil ne peut pas lire les codes-barres. Tape le code à la main.', 'erreur');
+      return;
+    }
+    afficher('Lecture de la photo…', 'info');
+    try {
+      const image = await createImageBitmap(fichier);
+      const resultats = await detecteur.detect(image);
+      if (resultats.length) {
+        dernierCode = '';
+        enregistrer(resultats[0].rawValue);
+      } else {
+        afficher('Aucun code-barre trouvé. Reprends la photo de plus près, bien éclairée.', 'erreur');
+      }
+    } catch (e) {
+      afficher('Erreur de lecture : ' + e.message, 'erreur');
+    }
+  };
+
+  document.getElementById('btn-manuel').onclick = function () {
+    const champ = document.getElementById('code-manuel');
+    const code = champ.value.replace(/\D/g, '');
+    if (!code) return;
+    champ.value = '';
+    dernierCode = '';
+    enregistrer(code);
+  };
+
+  afficherEcran();
+</script>
+</body>
+</html>
