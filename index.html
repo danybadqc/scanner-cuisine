@@ -43,6 +43,20 @@
   #historique .entree.annulee span { text-decoration: line-through; color: #80868b; }
   #photo, #photo-produit { display: none; }
   #btn-photo-produit { margin-top: 4px; }
+  #onglets { margin-bottom: 12px; }
+  #onglets button { font-size: 17px; }
+  .groupe h3 { font-size: 16px; margin: 18px 0 4px; color: #5f6368; }
+  .article { display: flex; align-items: center; gap: 8px; background: #fff; padding: 10px 12px; border-radius: 10px; margin-top: 6px; }
+  .article .infos { flex: 1; min-width: 0; }
+  .article .nom { font-weight: bold; }
+  .article .details { font-size: 13px; color: #5f6368; }
+  .article .perime { color: #d93025; font-weight: bold; }
+  .article .bientot { color: #e37400; font-weight: bold; }
+  .article .qte-inv { min-width: 28px; text-align: center; font-size: 18px; }
+  .article button { width: 44px; margin: 0; padding: 8px; font-size: 20px; }
+  .article button.confirmer { width: auto; background: #d93025; color: #fff; font-size: 14px; }
+  #message-inv { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 16px; background: #fff; }
+  #version { text-align: center; color: #9aa0a6; font-size: 12px; margin: 8px 0 0; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
 </style>
 </head>
@@ -58,6 +72,12 @@
   </div>
 
   <div id="app" hidden>
+    <div class="bascule" id="onglets">
+      <button data-v="scanner" class="actif">Scanner</button>
+      <button data-v="inventaire">Inventaire</button>
+    </div>
+
+    <div id="vue-scanner">
     <div id="mode-zone">
       <div class="bascule" id="bascule-mode">
         <button data-v="ajouter" class="actif">+ J'ajoute</button>
@@ -140,10 +160,24 @@
 
     <div id="message" class="info">Prêt à scanner.</div>
     <div id="historique"></div>
+    </div>
+
+    <div id="vue-inventaire" hidden>
+      <div class="ligne">
+        <input id="recherche" type="search" placeholder="Chercher un produit">
+        <button id="btn-rafraichir" class="secondaire">Rafraîchir</button>
+      </div>
+      <div id="message-inv" class="info">Chargement…</div>
+      <div id="liste-inv"></div>
+    </div>
+
     <a id="lien-cle" href="#">Changer la clé secrète</a>
+    <p id="version"></p>
   </div>
 
 <script>
+  const VERSION = '0.7';
+  const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
   const $ = id => document.getElementById(id);
@@ -396,6 +430,126 @@
     $('historique').prepend(ligne);
   }
 
+  // ---------- Onglets ----------
+  document.querySelectorAll('#onglets button').forEach(b => b.onclick = () => {
+    const vue = b.dataset.v;
+    if (vue === 'inventaire' && !$('fiche').hidden) { afficher('Termine ou annule la fiche en cours d\'abord.', 'erreur'); return; }
+    bascule('onglets', vue);
+    $('vue-scanner').hidden = vue !== 'scanner';
+    $('vue-inventaire').hidden = vue !== 'inventaire';
+    if (vue === 'inventaire') {
+      if (flux) $('btn-stop').onclick();
+      chargerInventaire();
+    }
+  });
+
+  // ---------- Onglet Inventaire ----------
+  let articles = [];
+  function afficherInv(texte, type) { $('message-inv').textContent = texte; $('message-inv').className = type; }
+  const sansAccents = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+  async function chargerInventaire() {
+    afficherInv('Chargement de l\'inventaire…', 'info');
+    try {
+      const r = await appeler({ action: 'inventaire' });
+      articles = r.articles || [];
+      dessinerInventaire();
+      afficherInv(articles.length ? articles.length + ' produit(s) en inventaire.' : 'L\'inventaire est vide.', 'info');
+    } catch (err) {
+      afficherInv('Erreur : ' + err.message, 'erreur');
+    }
+  }
+
+  // Texte et couleur de la date limite
+  function texteDate(date) {
+    if (!date) return null;
+    const jours = Math.round((new Date(date + 'T00:00') - new Date(new Date().toDateString())) / 86400000);
+    if (isNaN(jours)) return { texte: 'date limite ' + date, classe: '' };
+    if (jours < 0) return { texte: 'périmé depuis le ' + date, classe: 'perime' };
+    if (jours <= 3) return { texte: (jours === 0 ? 'périme aujourd\'hui' : 'périme dans ' + jours + ' j') + ' (' + date + ')', classe: 'bientot' };
+    return { texte: 'date limite ' + date, classe: '' };
+  }
+
+  function dessinerInventaire() {
+    const filtre = sansAccents($('recherche').value.trim());
+    const liste = $('liste-inv');
+    liste.innerHTML = '';
+    const visibles = articles.filter(a => !filtre || sansAccents(a.nom + ' ' + a.marque).includes(filtre));
+    const groupes = EMPLACEMENTS.concat([...new Set(visibles.map(a => a.emplacement))].filter(e => !EMPLACEMENTS.includes(e)));
+    groupes.forEach(emp => {
+      const items = visibles.filter(a => a.emplacement === emp).sort((x, y) => x.nom.localeCompare(y.nom, 'fr'));
+      if (!items.length) return;
+      const groupe = document.createElement('div');
+      groupe.className = 'groupe';
+      const h = document.createElement('h3');
+      h.textContent = (emp || 'Sans emplacement') + ' (' + items.length + ')';
+      groupe.append(h);
+      items.forEach(a => groupe.append(elementArticle(a)));
+      liste.append(groupe);
+    });
+    if (articles.length && !visibles.length) {
+      const p = document.createElement('p'); p.className = 'sous'; p.textContent = 'Aucun produit ne correspond à la recherche.';
+      liste.append(p);
+    }
+  }
+
+  function elementArticle(a) {
+    const el = document.createElement('div');
+    el.className = 'article';
+    const infos = document.createElement('div'); infos.className = 'infos';
+    const nom = document.createElement('div'); nom.className = 'nom'; nom.textContent = a.nom;
+    const details = document.createElement('div'); details.className = 'details';
+    details.textContent = [a.marque, a.format].filter(Boolean).join(' · ');
+    const d = texteDate(a.dateLimite);
+    if (d) {
+      const s = document.createElement('span'); s.className = d.classe;
+      s.textContent = (details.textContent ? ' · ' : '') + d.texte;
+      details.append(s);
+    }
+    infos.append(nom, details);
+
+    const moins = document.createElement('button'); moins.className = 'secondaire'; moins.textContent = '−';
+    const qte = document.createElement('span'); qte.className = 'qte-inv'; qte.textContent = a.quantite;
+    const plus = document.createElement('button'); plus.className = 'secondaire'; plus.textContent = '+';
+
+    let attente = null;
+    moins.onclick = () => {
+      // À 1, il faut confirmer : la ligne disparaîtra de l'inventaire
+      if (a.quantite <= 1 && !attente) {
+        moins.textContent = 'Retirer ?'; moins.classList.add('confirmer');
+        attente = setTimeout(() => { attente = null; moins.textContent = '−'; moins.classList.remove('confirmer'); }, 3000);
+        return;
+      }
+      clearTimeout(attente); attente = null;
+      ajusterArticle(a, -1, el);
+    };
+    plus.onclick = () => ajusterArticle(a, 1, el);
+    el.append(infos, moins, qte, plus);
+    return el;
+  }
+
+  async function ajusterArticle(a, delta, el) {
+    el.querySelectorAll('button').forEach(b => b.disabled = true);
+    try {
+      const r = await appeler({ action: 'ajuster', ligne: a.ligne, code: a.code, nom: a.nom, emplacement: a.emplacement, delta: delta });
+      if (r.code) ajouterHistorique(r);
+      if (r.supprime) {
+        await chargerInventaire();   // les lignes du Sheet ont bougé : on recharge
+        afficherInv(a.nom + ' retiré de l\'inventaire (' + a.emplacement + ').', 'ok');
+        return;
+      }
+      a.quantite = r.reste;
+      dessinerInventaire();
+      afficherInv((delta > 0 ? '+1 ' : '−1 ') + a.nom + ' : il en reste ' + r.reste + '.', 'ok');
+    } catch (err) {
+      afficherInv('Erreur : ' + err.message, 'erreur');
+      el.querySelectorAll('button').forEach(b => b.disabled = false);
+    }
+  }
+
+  $('recherche').oninput = dessinerInventaire;
+  $('btn-rafraichir').onclick = chargerInventaire;
+
   // ---------- Lecture des codes-barres ----------
   async function creerDetecteur() {
     if (!('BarcodeDetector' in window)) return null;
@@ -476,6 +630,7 @@
     traiterCode(code);
   };
 
+  $('version').textContent = 'Version ' + VERSION;
   afficherEcran();
 </script>
 </body>
