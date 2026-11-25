@@ -38,7 +38,8 @@
   .boutons button { flex: 1; }
   #historique { margin-top: 16px; font-size: 15px; }
   #historique div { padding: 6px 0; border-bottom: 1px solid #e3e6ea; }
-  #photo { display: none; }
+  #photo, #photo-produit { display: none; }
+  #btn-photo-produit { margin-top: 4px; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
 </style>
 </head>
@@ -80,6 +81,8 @@
       <div id="fiche-titre"></div>
 
       <div id="champs-produit" hidden>
+        <button id="btn-photo-produit" class="secondaire">Photographier le produit pour l'identifier</button>
+        <input type="file" id="photo-produit" accept="image/*" capture="environment">
         <label for="f-nom">Nom du produit *</label>
         <input id="f-nom" type="text" placeholder="ex. Riz jasmin">
         <label for="f-marque">Marque</label>
@@ -295,7 +298,45 @@
     setTimeout(() => { occupe = false; }, 1200);
   }
 
-  $('btn-annuler').onclick = () => { fermerFiche(); afficher('Annulé. Prêt à scanner.', 'info'); };
+  // ---------- Identification par photo de l'emballage ----------
+  // Réduit la photo (côté le plus long : 1024 px) et la retourne en JPEG base64
+  async function photoReduite(fichier) {
+    const img = await createImageBitmap(fichier);
+    const echelle = Math.min(1, 1024 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * echelle);
+    c.height = Math.round(img.height * echelle);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.8).split(',')[1];
+  }
+
+  $('btn-photo-produit').onclick = () => $('photo-produit').click();
+  $('photo-produit').onchange = async function () {
+    const fichier = this.files[0];
+    this.value = '';
+    if (!fichier || !courant) return;
+    const btn = $('btn-photo-produit');
+    btn.disabled = true;
+    afficher('Identification du produit sur la photo…', 'info');
+    try {
+      const r = await appeler({ action: 'identifier', code: courant.code, image: await photoReduite(fichier) });
+      if (!r.produit) {
+        afficher('Je n\'ai pas reconnu le produit. Reprends la photo du devant de l\'emballage, ou tape le nom.', 'erreur');
+        return;
+      }
+      if (r.produit.nom) $('f-nom').value = r.produit.nom;
+      if (r.produit.marque) $('f-marque').value = r.produit.marque;
+      if (r.produit.format) $('f-format').value = r.produit.format;
+      if (!courant.source) courant.source = 'photo';
+      afficher('Produit identifié sur la photo. Vérifie le nom, la marque et le format, puis confirme.', 'ok');
+    } catch (err) {
+      afficher('Erreur : ' + err.message, 'erreur');
+    } finally {
+      btn.disabled = false;
+    }
+  };
+
+  $('btn-annuler').onclick =() => { fermerFiche(); afficher('Annulé. Prêt à scanner.', 'info'); };
 
   $('btn-confirmer').onclick = async () => {
     if (!courant) return;
