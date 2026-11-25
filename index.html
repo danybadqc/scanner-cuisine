@@ -57,6 +57,12 @@
   .article button { width: 44px; margin: 0; padding: 8px; font-size: 20px; }
   .article button.confirmer { width: auto; background: #d93025; color: #fff; font-size: 14px; }
   #btn-ajout { margin: 0 0 10px; }
+  #form-modif { margin: 0 0 10px; }
+  #form-modif textarea { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #c4c8cd; border-radius: 10px; font-family: inherit; }
+  #m-retirer { background: #fce8e6; color: #c5221f; }
+  #m-retirer.confirmer { background: #d93025; color: #fff; }
+  .article .infos { cursor: pointer; }
+  .article .notes { font-size: 13px; color: #5f6368; font-style: italic; }
   #form-ajout { margin: 0 0 10px; }
   #suggestions button { display: block; width: 100%; text-align: left; background: #f1f3f4; color: #1f2328; margin-top: 6px; padding: 10px 12px; font-size: 16px; }
   #suggestions button small { display: block; color: #5f6368; font-size: 13px; }
@@ -169,6 +175,40 @@
 
     <div id="vue-inventaire" hidden>
       <button id="btn-ajout">+ Ajouter un produit</button>
+      <div id="form-modif" class="carte" hidden>
+        <h2>Modifier</h2>
+        <p class="sous">Nom, marque, format et catégorie changent partout pour ce produit.</p>
+        <label for="m-nom">Produit *</label>
+        <input id="m-nom" type="text" autocomplete="off">
+        <label for="m-marque">Marque</label>
+        <input id="m-marque" type="text">
+        <label for="m-format">Format</label>
+        <input id="m-format" type="text">
+        <label for="m-categorie">Catégorie</label>
+        <select id="m-categorie"></select>
+        <label>Emplacement</label>
+        <div class="bascule" id="m-emplacement">
+          <button data-v="Garde-manger">Garde-manger</button>
+          <button data-v="Frigo">Frigo</button>
+          <button data-v="Congélateur">Congélateur</button>
+        </div>
+        <p id="m-info-emp" class="sous"></p>
+        <label for="m-qte">Quantité</label>
+        <div class="qte">
+          <button id="m-moins" class="secondaire">−</button>
+          <input id="m-qte" type="number" inputmode="numeric" min="1" value="1">
+          <button id="m-plus" class="secondaire">+</button>
+        </div>
+        <label for="m-date">Date limite</label>
+        <input id="m-date" type="date">
+        <label for="m-notes">Notes</label>
+        <textarea id="m-notes" rows="2" placeholder="ex. ouvert, pour le souper de dimanche"></textarea>
+        <div class="boutons">
+          <button id="m-annuler" class="secondaire">Annuler</button>
+          <button id="m-enregistrer">Enregistrer</button>
+        </div>
+        <button id="m-retirer">Retirer de l'inventaire</button>
+      </div>
       <div id="form-ajout" class="carte" hidden>
         <h2>Ajouter sans scanner</h2>
         <label for="a-nom">Produit *</label>
@@ -215,7 +255,7 @@
   </div>
 
 <script>
-  const VERSION = '0.9';
+  const VERSION = '0.10';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -496,7 +536,7 @@
       const r = await appeler({ action: 'inventaire' });
       articles = r.articles || [];
       dessinerInventaire();
-      afficherInv(articles.length ? articles.length + ' produit(s) en inventaire.' : 'L\'inventaire est vide.', 'info');
+      afficherInv(articles.length ? articles.length + ' produit(s) en inventaire. Touche un produit pour le modifier.' : 'L\'inventaire est vide.', 'info');
     } catch (err) {
       afficherInv('Erreur : ' + err.message, 'erreur');
     }
@@ -549,6 +589,8 @@
       details.append(s);
     }
     infos.append(nom, details);
+    if (a.notes) { const n = document.createElement('div'); n.className = 'notes'; n.textContent = a.notes; infos.append(n); }
+    infos.onclick = () => ouvrirModif(a);
 
     const moins = document.createElement('button'); moins.className = 'secondaire'; moins.textContent = '−';
     const qte = document.createElement('span'); qte.className = 'qte-inv'; qte.textContent = a.quantite;
@@ -636,6 +678,7 @@
     bascule('a-emplacement', '');
     $('suggestions').innerHTML = '';
     majInfo();
+    fermerModif();
     $('btn-ajout').hidden = true;
     $('form-ajout').hidden = false;
     $('a-nom').focus();
@@ -718,6 +761,92 @@
       afficherInv('Erreur : ' + err.message, 'erreur');
     } finally {
       $('a-confirmer').disabled = false;
+    }
+  };
+
+  // ---------- Modifier un produit ----------
+  let enModif = null, empModif = '';
+  $('m-categorie').innerHTML = $('f-categorie').innerHTML;
+
+  async function ouvrirModif(a) {
+    if (a.enAttente || a.envoiEnCours) await envoyer(a);   // d'abord les − / + en attente
+    if (!articles.includes(a)) return;                      // la ligne a disparu entre-temps
+    enModif = a;
+    $('m-nom').value = a.nom; $('m-marque').value = a.marque; $('m-format').value = a.format;
+    $('m-categorie').value = a.categorie || '';
+    empModif = a.emplacement; bascule('m-emplacement', empModif); majInfoEmp();
+    $('m-qte').value = a.quantite; $('m-date').value = a.dateLimite || ''; $('m-notes').value = a.notes || '';
+    retirerReset();
+    $('form-ajout').hidden = true; $('btn-ajout').hidden = true;
+    $('form-modif').hidden = false;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function fermerModif() { enModif = null; $('form-modif').hidden = true; $('btn-ajout').hidden = false; }
+
+  function majInfoEmp() {
+    if (!enModif || empModif === enModif.emplacement) { $('m-info-emp').textContent = ''; return; }
+    const deja = articles.find(x => x !== enModif && x.emplacement === empModif &&
+      (enModif.code ? x.code === enModif.code : !x.code && sansAccents(x.nom) === sansAccents(enModif.nom)));
+    $('m-info-emp').textContent = deja
+      ? 'Il y en a déjà ' + deja.quantite + ' au ' + empModif.toLowerCase() + ' : les quantités seront additionnées.'
+      : 'Le produit sera déplacé au ' + empModif.toLowerCase() + '.';
+  }
+
+  document.querySelectorAll('#m-emplacement button').forEach(b => b.onclick = () => { empModif = b.dataset.v; bascule('m-emplacement', empModif); majInfoEmp(); });
+  $('m-moins').onclick = () => { $('m-qte').value = Math.max(1, (parseInt($('m-qte').value) || 1) - 1); };
+  $('m-plus').onclick = () => { $('m-qte').value = (parseInt($('m-qte').value) || 0) + 1; };
+  $('m-annuler').onclick = () => { fermerModif(); afficherInv('Modification annulée.', 'info'); };
+
+  $('m-enregistrer').onclick = async () => {
+    const a = enModif;
+    if (!a) return;
+    const nom = $('m-nom').value.trim();
+    if (!nom) { afficherInv('Le nom du produit est obligatoire.', 'erreur'); return; }
+    $('m-enregistrer').disabled = true;
+    afficherInv('Enregistrement…', 'info');
+    try {
+      const r = await appeler({
+        action: 'modifier', ligne: a.ligne, nom: a.nom, emplacement: a.emplacement, code: a.code,
+        nouveau: {
+          nom: nom, marque: $('m-marque').value.trim(), format: $('m-format').value.trim(), categorie: $('m-categorie').value,
+          emplacement: empModif, quantite: parseInt($('m-qte').value) || 1, dateLimite: $('m-date').value || '', notes: $('m-notes').value.trim()
+        }
+      });
+      produitsConnus = null;   // les noms ont pu changer
+      fermerModif();
+      await chargerInventaire();
+      afficherInv('Modifié : ' + r.nom + (r.fusion ? ' (regroupé au ' + r.emplacement.toLowerCase() + ')' : '') + '.', 'ok');
+    } catch (err) {
+      afficherInv('Erreur : ' + err.message, 'erreur');
+    } finally {
+      $('m-enregistrer').disabled = false;
+    }
+  };
+
+  // Retirer toute la ligne : il faut appuyer deux fois
+  let retirerAttente = null;
+  function retirerReset() { clearTimeout(retirerAttente); retirerAttente = null; $('m-retirer').textContent = 'Retirer de l\'inventaire'; $('m-retirer').classList.remove('confirmer'); }
+  $('m-retirer').onclick = async () => {
+    const a = enModif;
+    if (!a) return;
+    if (!retirerAttente) {
+      $('m-retirer').textContent = 'Appuie encore pour confirmer (' + a.quantite + ' en moins)';
+      $('m-retirer').classList.add('confirmer');
+      retirerAttente = setTimeout(retirerReset, 4000);
+      return;
+    }
+    retirerReset();
+    $('m-retirer').disabled = true;
+    try {
+      const r = await appeler({ action: 'ajuster', ligne: a.ligne, code: a.code, nom: a.nom, emplacement: a.emplacement, delta: -a.quantite });
+      if (r.code) ajouterHistorique(r);
+      fermerModif();
+      await chargerInventaire();
+      afficherInv(a.nom + ' retiré de l\'inventaire (' + a.emplacement + ').', 'ok');
+    } catch (err) {
+      afficherInv('Erreur : ' + err.message, 'erreur');
+    } finally {
+      $('m-retirer').disabled = false;
     }
   };
 
