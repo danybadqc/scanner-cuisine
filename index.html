@@ -117,6 +117,20 @@
   #p-image-boutons button { margin-top: 6px; padding: 10px; font-size: 15px; width: auto; }
   #p-fichier { display: none; }
   #message-prod { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 16px; background: #fff; }
+  #mode-zone .bascule button.actif[data-v="rafale"] { background: #188038; }
+  #rafale-zone { margin-top: 10px; }
+  #rafale-zone .bascule button.actif { background: #188038; }
+  #rafale-compteur { margin: 10px 0 0; font-size: 16px; }
+  #rafale-liste { margin-top: 8px; }
+  .r-ligne { display: flex; align-items: center; gap: 8px; background: #fff; padding: 8px 10px; border-radius: 10px; margin-top: 6px; }
+  .r-ligne .infos { flex: 1; min-width: 0; }
+  .r-ligne .nom { font-weight: bold; overflow-wrap: anywhere; }
+  .r-ligne .etat { font-size: 13px; color: #5f6368; }
+  .r-ligne.a-completer .etat { color: #b06000; font-weight: bold; }
+  .r-ligne.erreur-r .etat { color: #d93025; font-weight: bold; }
+  .r-ligne .nb { min-width: 30px; text-align: center; font-size: 18px; font-weight: bold; }
+  .r-ligne button { width: 44px; margin: 0; padding: 8px; font-size: 18px; }
+  .r-ligne .vignette { width: 40px; height: 40px; cursor: default; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
 </style>
 </head>
@@ -143,6 +157,15 @@
       <div class="bascule" id="bascule-mode">
         <button data-v="ajouter" class="actif">+ J'ajoute</button>
         <button data-v="retirer">− J'ai utilisé</button>
+        <button data-v="rafale">Prise d'inventaire</button>
+      </div>
+      <div id="rafale-zone" hidden>
+        <p class="sous">Choisis où tu es, puis scanne tout à la chaîne : chaque produit est ajouté tout de suite (1 par scan).</p>
+        <div class="bascule" id="rafale-emplacement">
+          <button data-v="Garde-manger">Garde-manger</button>
+          <button data-v="Frigo">Frigo</button>
+          <button data-v="Congélateur">Congélateur</button>
+        </div>
       </div>
     </div>
 
@@ -227,6 +250,10 @@
     </div>
 
     <div id="message" class="info">Prêt à scanner.</div>
+    <div id="rafale-resultats" hidden>
+      <p id="rafale-compteur"></p>
+      <div id="rafale-liste"></div>
+    </div>
     <div id="historique"></div>
     </div>
 
@@ -376,7 +403,7 @@
   </div>
 
 <script>
-  const VERSION = '0.16';
+  const VERSION = '0.17';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -447,7 +474,13 @@
   document.querySelectorAll('#bascule-mode button').forEach(b => b.onclick = () => {
     if (occupe) return;
     mode = b.dataset.v; bascule('bascule-mode', mode);
-    afficher(mode === 'ajouter' ? 'Mode ajout : scanne ce que tu ranges.' : 'Mode retrait : scanne ce que tu as utilisé ou jeté.', 'info');
+    $('rafale-zone').hidden = mode !== 'rafale';
+    $('rafale-resultats').hidden = mode !== 'rafale' || !rafaleLignes.length;
+    $('historique').hidden = mode === 'rafale';
+    afficher(mode === 'ajouter' ? 'Mode ajout : scanne ce que tu ranges.'
+      : mode === 'retirer' ? 'Mode retrait : scanne ce que tu as utilisé ou jeté.'
+      : empRafale ? 'Prise d\'inventaire au ' + empRafale.toLowerCase() + ' : scanne à la chaîne.' : 'Prise d\'inventaire : choisis d\'abord où tu es.', 'info');
+    if (sansLecteur) $('code-manuel').focus();
   });
   document.querySelectorAll('#bascule-emplacement button').forEach(b => b.onclick = () => {
     emplacement = b.dataset.v; bascule('bascule-emplacement', emplacement);
@@ -509,6 +542,12 @@
   }
 
   async function traiterCode(code, format) {
+    if (mode === 'rafale') {
+      const pb = verifierCode(code, format);
+      if (pb) { afficher(code + ' : ' + pb + ' Réessaie.', 'erreur'); bip(false); return; }
+      rafaleScan(code);
+      return;
+    }
     if (occupe) return;
     const probleme = verifierCode(code, format);
     if (probleme) { afficher(code + ' : ' + probleme + ' Réessaie.', 'erreur'); return; }
@@ -548,17 +587,19 @@
     oublierReset();
     $('btn-oublier').hidden = !(modeDev() && r.source === 'produits');
 
-    // Champs du produit : affichés si inconnu, si le nom est vide, ou s'il vient d'une base souvent en anglais
+    // Champs du produit : affichés si inconnu, si le nom est vide ou « À compléter », ou s'il vient d'une base souvent en anglais
     const baseAnglaise = ['upcitemdb', 'usda'].includes(r.source);
-    const montrerChamps = inconnu || !p.nom || baseAnglaise;
+    const aCompleter = !!(p && estACompleter(p.nom));
+    const montrerChamps = inconnu || !p.nom || baseAnglaise || aCompleter;
     $('champs-produit').hidden = !montrerChamps;
-    $('f-nom').value = p ? (p.nom || '') : '';
+    $('f-nom').value = p && !aCompleter ? (p.nom || '') : '';
+    if (aCompleter) h.textContent = 'Produit à compléter';
     $('f-marque').value = p ? (p.marque || '') : '';
     $('f-format').value = p ? (p.format || '') : '';
 
-    // Catégorie : demandée seulement si on ne la connaît pas encore
+    // Catégorie : cachée si elle vient de ta liste; préremplie (à vérifier) si elle a été devinée d'après une base
     $('f-categorie').value = p && p.categorie ? p.categorie : '';
-    $('champ-categorie').hidden = mode === 'retirer' || !!(p && p.categorie);
+    $('champ-categorie').hidden = mode === 'retirer' || !!(p && p.categorie && r.source === 'produits');
 
     // Emplacement par défaut
     if (mode === 'retirer' && r.inventaire && r.inventaire.length) emplacement = r.inventaire[0].emplacement;
@@ -717,6 +758,113 @@
       $('btn-confirmer').disabled = false;
     }
   };
+
+  // ---------- Prise d'inventaire (mode rafale) ----------
+  const estACompleter = nom => String(nom || '').indexOf('À compléter') === 0;
+  let empRafale = '';
+  try { empRafale = localStorage.getItem('empRafale') || ''; } catch (e) {}
+  bascule('rafale-emplacement', empRafale);
+  document.querySelectorAll('#rafale-emplacement button').forEach(b => b.onclick = () => {
+    empRafale = b.dataset.v; bascule('rafale-emplacement', empRafale);
+    try { localStorage.setItem('empRafale', empRafale); } catch (e) {}
+    afficher('Prise d\'inventaire au ' + empRafale.toLowerCase() + ' : scanne à la chaîne.', 'info');
+    if (sansLecteur) $('code-manuel').focus();
+  });
+
+  // Petit bip (aigu = ajouté, grave = à compléter ou erreur) + vibration
+  let audio = null;
+  function bip(ok) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = ok ? 1200 : 440; g.gain.value = 0.08;
+      o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + (ok ? 0.08 : 0.25));
+    } catch (e) {}
+    if (navigator.vibrate) navigator.vibrate(ok ? 60 : [80, 60, 80]);
+  }
+
+  // Une ligne par produit et emplacement dans la séance; les envois partent un à la fois, en arrière-plan
+  const rafaleLignes = [];
+  const fileRafale = [];
+  let fileEnCours = false;
+
+  function ligneRafale(code, emp) {
+    const cle = c => String(c).replace(/^0+/, '');
+    let l = rafaleLignes.find(x => cle(x.code) === cle(code) && x.emp === emp);
+    if (!l) {
+      l = { code: code, emp: emp, nom: 'Code ' + code, nb: 0, attente: 0, statut: 'recherche', image: '', erreur: '' };
+      rafaleLignes.unshift(l);
+    }
+    return l;
+  }
+
+  function rafaleScan(code) {
+    if (!empRafale) { afficher('Choisis d\'abord où tu es : Garde-manger, Frigo ou Congélateur.', 'erreur'); bip(false); return; }
+    dernierCode = code; finDernierCode = Date.now() + 2500;   // la caméra ne recompte pas le même produit tout de suite
+    const l = ligneRafale(code, empRafale);
+    l.attente++;
+    fileRafale.push({ type: 'ajout', ligne: l });
+    bip(true);
+    dessinerRafale();
+    traiterFile();
+  }
+
+  async function traiterFile() {
+    if (fileEnCours) return;
+    fileEnCours = true;
+    while (fileRafale.length) {
+      const t = fileRafale.shift(), l = t.ligne;
+      try {
+        if (t.type === 'ajout') {
+          const r = await appeler({ action: 'rafale', code: l.code, emplacement: l.emp });
+          l.nb++; l.nom = r.nom; l.statut = r.statut; l.image = r.image || l.image; l.erreur = '';
+          if (r.statut === 'à compléter' && l.nb === 1) bip(false);
+        } else {
+          await appeler({ action: 'annuler', code: l.code, mode: 'ajouter', quantite: 1, emplacement: l.emp, avant: null });
+          l.nb--;
+        }
+      } catch (err) {
+        l.erreur = err.message;
+      }
+      if (t.type === 'ajout') l.attente--;
+      if (fileRafale.length) dessinerRafale();
+    }
+    fileEnCours = false;
+    dessinerRafale();
+  }
+
+  function dessinerRafale() {
+    $('rafale-resultats').hidden = mode !== 'rafale' || !rafaleLignes.length;
+    const total = rafaleLignes.reduce((n, l) => n + l.nb, 0);
+    const aFaire = rafaleLignes.filter(l => l.statut === 'à compléter' && l.nb > 0).length;
+    const enCours = fileRafale.length + (fileEnCours ? 1 : 0);
+    $('rafale-compteur').textContent = total + ' unité(s) ajoutée(s) dans cette séance' +
+      (aFaire ? ' · ' + aFaire + ' produit(s) à compléter' : '') + (enCours ? ' · ' + enCours + ' en cours…' : '');
+    const liste = $('rafale-liste');
+    liste.innerHTML = '';
+    rafaleLignes.forEach(l => {
+      const el = document.createElement('div');
+      el.className = 'r-ligne' + (l.erreur ? ' erreur-r' : l.statut === 'à compléter' ? ' a-completer' : '');
+      let img;
+      if (imageSure(l.image)) { img = document.createElement('img'); img.className = 'vignette'; img.alt = ''; img.src = l.image; img.onerror = () => img.remove(); }
+      const infos = document.createElement('div'); infos.className = 'infos';
+      const n = document.createElement('div'); n.className = 'nom'; n.textContent = l.nom;
+      const e = document.createElement('div'); e.className = 'etat';
+      e.textContent = l.erreur ? 'Erreur : ' + l.erreur
+        : l.statut === 'recherche' ? 'Recherche…'
+        : (l.statut === 'à compléter' ? 'Introuvable : à compléter plus tard · ' : '') + l.emp + (l.attente ? ' · envoi en cours…' : '');
+      infos.append(n, e);
+      const moins = document.createElement('button'); moins.className = 'secondaire'; moins.textContent = '−';
+      moins.disabled = l.nb <= 0;
+      moins.onclick = () => { if (l.nb > 0) { fileRafale.push({ type: 'retrait', ligne: l }); dessinerRafale(); traiterFile(); } };
+      const nb = document.createElement('span'); nb.className = 'nb'; nb.textContent = l.nb + (l.attente ? '+' + l.attente : '');
+      const plus = document.createElement('button'); plus.className = 'secondaire'; plus.textContent = '+';
+      plus.onclick = () => { const emp = empRafale; empRafale = l.emp; rafaleScan(l.code); empRafale = emp; };
+      if (img) el.append(img);
+      el.append(infos, moins, nb, plus);
+      liste.append(el);
+    });
+  }
 
   // ---------- Historique et annulation ----------
   function ajouterHistorique(r) {
@@ -1154,6 +1302,7 @@
   $('p-categorie').innerHTML = $('f-categorie').innerHTML;
   [...$('f-categorie').options].slice(1).forEach(o => $('filtre-categorie').append(new Option(o.value, o.value)));
   $('filtre-categorie').append(new Option('(sans catégorie)', '-'));
+  $('filtre-categorie').append(new Option('(à compléter)', 'ac'));
   function afficherProd(texte, type) { $('message-prod').textContent = texte; $('message-prod').className = type; }
 
   async function chargerCatalogue() {
@@ -1170,7 +1319,7 @@
     const cat = $('filtre-categorie').value;
     const lignes = catalogue
       .filter(p => !filtre || sansAccents([p.nom, p.marque, p.format, p.code].join(' ')).includes(filtre))
-      .filter(p => !cat || (cat === '-' ? !p.categorie : p.categorie === cat))
+      .filter(p => !cat || (cat === 'ac' ? estACompleter(p.nom) : cat === '-' ? !p.categorie : p.categorie === cat))
       .sort((a, b) => triProduits === 'enInventaire' ? b.enInventaire - a.enInventaire
         : String(a[triProduits] || '\uffff').localeCompare(String(b[triProduits] || '\uffff'), 'fr') || a.nom.localeCompare(b.nom, 'fr'));
     const corps = document.querySelector('#table-produits tbody');
