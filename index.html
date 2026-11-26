@@ -79,6 +79,16 @@
   #btn-oublier.confirmer { background: #d93025; color: #fff; border-color: #d93025; }
   #lien-dev { display: block; margin-top: 8px; text-align: center; color: #5f6368; font-size: 14px; }
   #version { text-align: center; color: #9aa0a6; font-size: 12px; margin: 8px 0 0; }
+  .vignette { width: 48px; height: 48px; flex: none; border-radius: 8px; object-fit: contain; background: #f1f3f4; cursor: pointer; }
+  div.vignette { display: flex; align-items: center; justify-content: center; color: #9aa0a6; font-size: 20px; font-weight: bold; }
+  #fiche-entete { display: flex; gap: 12px; align-items: flex-start; }
+  #fiche-titre { flex: 1; min-width: 0; }
+  #fiche-image { width: 96px; height: 96px; flex: none; border-radius: 10px; object-fit: contain; background: #f1f3f4; }
+  #m-image-zone { display: flex; gap: 12px; align-items: center; }
+  #m-image { width: 96px; height: 96px; flex: none; border-radius: 10px; object-fit: contain; background: #f1f3f4; }
+  #m-image-boutons { flex: 1; }
+  #m-image-boutons button { margin-top: 6px; padding: 10px; font-size: 15px; }
+  #m-photo { display: none; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
 </style>
 </head>
@@ -123,7 +133,10 @@
     </div>
 
     <div id="fiche" class="carte" hidden>
-      <div id="fiche-titre"></div>
+      <div id="fiche-entete">
+        <div id="fiche-titre"></div>
+        <img id="fiche-image" alt="" hidden>
+      </div>
 
       <div id="champs-produit" hidden>
         <button id="btn-photo-produit" class="secondaire">Photographier le produit pour l'identifier</button>
@@ -192,6 +205,15 @@
       <div id="form-modif" class="carte" hidden>
         <h2>Modifier</h2>
         <p class="sous">Nom, marque, format et catégorie changent partout pour ce produit.</p>
+        <label>Image</label>
+        <div id="m-image-zone">
+          <img id="m-image" alt="" hidden>
+          <div id="m-image-boutons">
+            <button id="m-photo-btn" class="secondaire">Prendre une photo</button>
+            <button id="m-sans-image" class="secondaire">Retirer l'image</button>
+          </div>
+          <input type="file" id="m-photo" accept="image/*" capture="environment">
+        </div>
         <label for="m-nom">Produit *</label>
         <input id="m-nom" type="text" autocomplete="off">
         <label for="m-marque">Marque</label>
@@ -270,7 +292,7 @@
   </div>
 
 <script>
-  const VERSION = '0.14';
+  const VERSION = '0.15';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -292,7 +314,11 @@
     $('app').hidden = !aCle;
   }
   $('btn-cle').onclick = () => { const c = $('champ-cle').value.trim(); if (c) { ecrireCle(c); afficherEcran(); } };
-  $('lien-cle').onclick = ev => { ev.preventDefault(); ecrireCle(''); afficherEcran(); };
+  $('lien-cle').onclick = ev => {
+    ev.preventDefault();
+    if (!confirm('Effacer la clé secrète de ce navigateur ? Il faudra la retaper.')) return;
+    ecrireCle(''); afficherEcran();
+  };
 
   // ---------- Mode développement (diagnostic des bases de données) ----------
   function modeDev() { try { return localStorage.getItem('modeDev') === '1'; } catch (e) { return false; } }
@@ -377,10 +403,18 @@
   }
 
   // ---------- Échanges avec le script ----------
-  async function appeler(donnees) {
+  async function appeler(donnees, enFermant) {
     donnees.cle = lireCle();
-    const rep = await fetch(URL_SCRIPT, { method: 'POST', body: JSON.stringify(donnees) });
-    const r = await rep.json();
+    const corps = JSON.stringify(donnees);
+    let rep, r;
+    try {
+      // enFermant : l'app se ferme ou passe en arrière-plan; keepalive laisse l'envoi se terminer quand même
+      rep = await fetch(URL_SCRIPT, { method: 'POST', body: corps, keepalive: !!enFermant && corps.length < 60000 });
+    } catch (e) {
+      throw new Error('Pas de connexion avec le script Google. Vérifie Internet, puis réessaie.');
+    }
+    try { r = await rep.json(); }
+    catch (e) { throw new Error('Le script Google n\'a pas répondu correctement (code ' + rep.status + '). Réessaie dans un instant.'); }
     if (!r.ok) throw new Error(r.erreur || 'Erreur inconnue');
     return r;
   }
@@ -425,6 +459,7 @@
     }
     s2.textContent = texteInventaire(r.inventaire);
     titre.append(h, s1, s2);
+    montrerImage($('fiche-image'), p && p.image);
     afficherDiagnostic(r.diagnostic || null);
     oublierReset();
     $('btn-oublier').hidden = !(modeDev() && r.source === 'produits');
@@ -464,11 +499,33 @@
     }
   }
 
+  let dernierCode = '', finDernierCode = 0;   // pour ne pas rouvrir la fiche du produit encore devant la caméra
   function fermerFiche() {
+    if (courant) { dernierCode = courant.code; finDernierCode = Date.now() + 4000; }
     $('fiche').hidden = true;
     $('zone-scan').hidden = false;
     courant = null;
     setTimeout(() => { occupe = false; }, 1200);
+  }
+
+  // ---------- Images ----------
+  // Petite vignette (côté le plus long : 120 px) pour garder la photo du produit dans le Sheet
+  async function vignette(fichier) {
+    const img = await createImageBitmap(fichier);
+    const echelle = Math.min(1, 120 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.width * echelle);
+    c.height = Math.round(img.height * echelle);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);   // fond blanc (pas de transparence en JPEG)
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.7);
+  }
+  // Seules les adresses https et nos propres vignettes sont affichées
+  const imageSure = src => /^https:\/\//.test(src || '') || /^data:image\/jpeg;base64,/.test(src || '');
+  function montrerImage(img, src) {
+    img.onerror = () => { img.hidden = true; };
+    if (imageSure(src)) { img.src = src; img.hidden = false; } else { img.removeAttribute('src'); img.hidden = true; }
   }
 
   // ---------- Identification par photo de l'emballage ----------
@@ -494,8 +551,11 @@
     $('btn-confirmer').disabled = true;
     afficher('Identification du produit sur la photo… (quelques secondes)', 'info');
     try {
+      const petite = await vignette(fichier);
       const r = await appeler({ action: 'identifier', code: fiche.code, image: await photoReduite(fichier) });
       if (courant !== fiche) return;   // la fiche a été fermée entre-temps : on ignore la réponse
+      fiche.imagePhoto = petite;       // la photo devient l'image du produit
+      montrerImage($('fiche-image'), petite);
       if (!r.produit) {
         afficher('Je n\'ai pas reconnu le produit. Reprends la photo du devant de l\'emballage, ou tape le nom.', 'erreur');
         return;
@@ -556,7 +616,11 @@
       const r = await appeler({
         action: 'enregistrer', code: courant.code, mode: mode, source: courant.source,
         quantite: parseInt($('f-qte').value) || 1, emplacement: emplacement, dateLimite: $('f-date').value || '',
-        produit: { nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value }
+        produit: {
+          nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value,
+          // image : la photo prise, sinon celle de la base où le produit a été trouvé
+          image: courant.imagePhoto || (courant.source !== 'produits' && courant.produit && courant.produit.image) || ''
+        }
       });
       const verbe = r.mode === 'ajouter' ? 'Ajouté' : 'Retiré';
       afficher(verbe + ' : ' + r.quantite + ' × ' + r.nom + ' (' + r.emplacement + '). Il en reste ' + r.reste + '.', 'ok');
@@ -623,9 +687,31 @@
       articles = r.articles || [];
       dessinerInventaire();
       afficherInv(articles.length ? articles.length + ' produit(s) en inventaire. Touche un produit pour le modifier.' : 'L\'inventaire est vide.', 'info');
+      if (r.imagesACompleter) completerImages();
     } catch (err) {
       afficherInv('Erreur : ' + err.message, 'erreur');
     }
+  }
+
+  // Cherche en arrière-plan les images Open Food Facts des fiches qui n'en ont pas encore (12 à la fois)
+  let completionEnCours = false;
+  async function completerImages() {
+    if (completionEnCours) return;
+    completionEnCours = true;
+    try {
+      for (let tour = 0; tour < 5; tour++) {
+        const r = await appeler({ action: 'completerImages' });
+        const cle = c => String(c || '').replace(/^0+/, '');
+        let change = false;
+        articles.forEach(a => {
+          const img = Object.keys(r.images || {}).find(c => cle(c) === cle(a.code));
+          if (img && !a.image) { a.image = r.images[img]; change = true; }
+        });
+        if (change) dessinerInventaire();
+        if (!r.reste) break;
+      }
+    } catch (e) { /* pas grave : on réessaiera au prochain affichage */ }
+    completionEnCours = false;
   }
 
   // Texte et couleur de la date limite
@@ -678,6 +764,17 @@
     if (a.notes) { const n = document.createElement('div'); n.className = 'notes'; n.textContent = a.notes; infos.append(n); }
     infos.onclick = () => ouvrirModif(a);
 
+    let image;
+    if (imageSure(a.image)) {
+      image = document.createElement('img');
+      image.className = 'vignette'; image.alt = ''; image.loading = 'lazy'; image.decoding = 'async';
+      image.src = a.image;
+      image.onerror = () => image.replaceWith(lettre(a));
+    } else {
+      image = lettre(a);
+    }
+    image.onclick = () => ouvrirModif(a);
+
     const moins = document.createElement('button'); moins.className = 'secondaire'; moins.textContent = '−';
     const qte = document.createElement('span'); qte.className = 'qte-inv'; qte.textContent = a.quantite;
     const plus = document.createElement('button'); plus.className = 'secondaire'; plus.textContent = '+';
@@ -698,8 +795,16 @@
       changer(a, -1);
     };
     plus.onclick = () => changer(a, 1);
-    el.append(infos, moins, qte, plus);
+    el.append(image, infos, moins, qte, plus);
     return el;
+  }
+  // Sans image : la première lettre du produit
+  function lettre(a) {
+    const d = document.createElement('div');
+    d.className = 'vignette';
+    d.textContent = (a.nom || '?').charAt(0).toUpperCase();
+    d.onclick = () => ouvrirModif(a);
+    return d;
   }
 
   // Le chiffre change tout de suite; l'envoi au Sheet part 0,9 s après la dernière pression,
@@ -715,7 +820,7 @@
     a.minuterie = setTimeout(() => envoyer(a), a.quantite === 0 ? 0 : DELAI_ENVOI);
   }
 
-  async function envoyer(a) {
+  async function envoyer(a, enFermant) {
     clearTimeout(a.minuterie);
     if (a.envoiEnCours) { await a.envoiEnCours; }      // un seul envoi à la fois par produit
     if (!a.enAttente) return;
@@ -723,7 +828,7 @@
     a.enAttente = 0;
     a.envoiEnCours = (async () => {
       try {
-        const r = await appeler({ action: 'ajuster', ligne: a.ligne, code: a.code, nom: a.nom, emplacement: a.emplacement, delta: delta });
+        const r = await appeler({ action: 'ajuster', ligne: a.ligne, code: a.code, nom: a.nom, emplacement: a.emplacement, delta: delta }, enFermant);
         if (r.code) ajouterHistorique(r);
         if (r.supprime) {
           // La ligne a disparu du Sheet : les lignes suivantes remontent d'un cran
@@ -747,8 +852,8 @@
   }
 
   // Envoie tout ce qui attend encore (avant de rafraîchir ou de quitter l'onglet)
-  async function envoyerTout() {
-    await Promise.all(articles.filter(a => a.enAttente || a.envoiEnCours).map(a => envoyer(a)));
+  async function envoyerTout(enFermant) {
+    await Promise.all(articles.filter(a => a.enAttente || a.envoiEnCours).map(a => envoyer(a, enFermant)));
   }
 
   // ---------- Ajout sans scanner ----------
@@ -852,6 +957,7 @@
 
   // ---------- Modifier un produit ----------
   let enModif = null, empModif = '';
+  let imageModif;   // undefined = inchangée, '' = retirée, sinon nouvelle vignette
   $('m-categorie').innerHTML = $('f-categorie').innerHTML;
 
   async function ouvrirModif(a) {
@@ -862,6 +968,9 @@
     $('m-categorie').value = a.categorie || '';
     empModif = a.emplacement; bascule('m-emplacement', empModif); majInfoEmp();
     $('m-qte').value = a.quantite; $('m-date').value = a.dateLimite || ''; $('m-notes').value = a.notes || '';
+    imageModif = undefined;
+    montrerImage($('m-image'), a.image);
+    $('m-sans-image').hidden = !a.image;
     retirerReset();
     $('form-ajout').hidden = true; $('btn-ajout').hidden = true;
     $('form-modif').hidden = false;
@@ -882,6 +991,24 @@
   $('m-moins').onclick = () => { $('m-qte').value = Math.max(1, (parseInt($('m-qte').value) || 1) - 1); };
   $('m-plus').onclick = () => { $('m-qte').value = (parseInt($('m-qte').value) || 0) + 1; };
   $('m-annuler').onclick = () => { fermerModif(); afficherInv('Modification annulée.', 'info'); };
+  $('m-photo-btn').onclick = () => $('m-photo').click();
+  $('m-photo').onchange = async function () {
+    const fichier = this.files[0];
+    this.value = '';
+    if (!fichier || !enModif) return;
+    try {
+      imageModif = await vignette(fichier);
+      montrerImage($('m-image'), imageModif);
+      $('m-sans-image').hidden = false;
+      afficherInv('Nouvelle image prête : touche « Enregistrer » pour la garder.', 'info');
+    } catch (e) { afficherInv('Impossible de lire cette photo : ' + e.message, 'erreur'); }
+  };
+  $('m-sans-image').onclick = () => {
+    imageModif = '';
+    montrerImage($('m-image'), '');
+    $('m-sans-image').hidden = true;
+    afficherInv('Image retirée : touche « Enregistrer » pour confirmer.', 'info');
+  };
 
   $('m-enregistrer').onclick = async () => {
     const a = enModif;
@@ -895,7 +1022,8 @@
         action: 'modifier', ligne: a.ligne, nom: a.nom, emplacement: a.emplacement, code: a.code,
         nouveau: {
           nom: nom, marque: $('m-marque').value.trim(), format: $('m-format').value.trim(), categorie: $('m-categorie').value,
-          emplacement: empModif, quantite: parseInt($('m-qte').value) || 1, dateLimite: $('m-date').value || '', notes: $('m-notes').value.trim()
+          emplacement: empModif, quantite: parseInt($('m-qte').value) || 1, dateLimite: $('m-date').value || '', notes: $('m-notes').value.trim(),
+          image: imageModif   // absent du JSON si inchangée
         }
       });
       produitsConnus = null;   // les noms ont pu changer
@@ -936,8 +1064,8 @@
     }
   };
 
-  window.addEventListener('pagehide', () => { envoyerTout(); });
-  document.addEventListener('visibilitychange', () => { if (document.hidden) envoyerTout(); });
+  window.addEventListener('pagehide', () => { envoyerTout(true); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) envoyerTout(true); });
 
   $('recherche').oninput = dessinerInventaire;
   $('btn-rafraichir').onclick = chargerInventaire;
@@ -963,6 +1091,8 @@
           const code = res[0].rawValue, format = res[0].format;
           if (verifierCode(code, format)) {
             lecturePrecedente = '';            // lecture invalide : on l'ignore et on continue
+          } else if (code === dernierCode && Date.now() < finDernierCode) {
+            lecturePrecedente = '';            // le produit qu'on vient de traiter est encore devant la caméra
           } else if (code === lecturePrecedente) {
             lecturePrecedente = '';
             traiterCode(code, format);
