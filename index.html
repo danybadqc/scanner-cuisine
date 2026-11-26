@@ -75,6 +75,8 @@
   #diagnostic .d-non { color: #80868b; }
   #diagnostic .d-pb { color: #d93025; font-weight: bold; }
   #diagnostic small { color: #5f6368; }
+  #btn-oublier { background: #fff8e1; color: #b06000; border: 1px dashed #f9ab00; font-size: 15px; }
+  #btn-oublier.confirmer { background: #d93025; color: #fff; border-color: #d93025; }
   #lien-dev { display: block; margin-top: 8px; text-align: center; color: #5f6368; font-size: 14px; }
   #version { text-align: center; color: #9aa0a6; font-size: 12px; margin: 8px 0 0; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
@@ -178,6 +180,7 @@
         <button id="btn-annuler" class="secondaire">Annuler</button>
         <button id="btn-confirmer">Confirmer</button>
       </div>
+      <button id="btn-oublier" hidden>Oublier ce produit (mode développement)</button>
     </div>
 
     <div id="message" class="info">Prêt à scanner.</div>
@@ -267,7 +270,7 @@
   </div>
 
 <script>
-  const VERSION = '0.13';
+  const VERSION = '0.14';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -423,6 +426,8 @@
     s2.textContent = texteInventaire(r.inventaire);
     titre.append(h, s1, s2);
     afficherDiagnostic(r.diagnostic || null);
+    oublierReset();
+    $('btn-oublier').hidden = !(modeDev() && r.source === 'produits');
 
     // Champs du produit : affichés si inconnu, si le nom est vide, ou s'il vient d'une base souvent en anglais
     const baseAnglaise = ['upcitemdb', 'usda'].includes(r.source);
@@ -508,7 +513,36 @@
     }
   };
 
-  $('btn-annuler').onclick =() => { fermerFiche(); afficher('Annulé. Prêt à scanner.', 'info'); };
+  // Mode développement : supprimer la fiche de Produits pour que le prochain scan traite le produit comme nouveau
+  let oublierAttente = null;
+  function oublierReset() {
+    clearTimeout(oublierAttente); oublierAttente = null;
+    $('btn-oublier').textContent = 'Oublier ce produit (mode développement)';
+    $('btn-oublier').classList.remove('confirmer');
+  }
+  $('btn-oublier').onclick = async () => {
+    if (!courant) return;
+    if (!oublierAttente) {
+      $('btn-oublier').textContent = 'Appuie encore pour supprimer sa fiche de Produits';
+      $('btn-oublier').classList.add('confirmer');
+      oublierAttente = setTimeout(oublierReset, 4000);
+      return;
+    }
+    oublierReset();
+    $('btn-oublier').disabled = true;
+    try {
+      const r = await appeler({ action: 'oublier', code: courant.code });
+      produitsConnus = null;
+      fermerFiche();
+      afficher('Fiche supprimée de Produits (' + r.supprimees + '). Le prochain scan de ' + r.code + ' le traitera comme un nouveau produit. L\'inventaire n\'a pas changé.', 'ok');
+    } catch (err) {
+      afficher('Erreur : ' + err.message, 'erreur');
+    } finally {
+      $('btn-oublier').disabled = false;
+    }
+  };
+
+  $('btn-annuler').onclick = () => { fermerFiche(); afficher('Annulé. Prêt à scanner.', 'info'); };
 
   $('btn-confirmer').onclick = async () => {
     if (!courant) return;
