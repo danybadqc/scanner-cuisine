@@ -255,7 +255,7 @@
   </div>
 
 <script>
-  const VERSION = '0.10';
+  const VERSION = '0.11';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -370,13 +370,15 @@
       s1.textContent = 'Code ' + r.code + ' : dis-moi ce que c\'est, je m\'en souviendrai.';
     } else {
       h.textContent = p.nom || '(sans nom)';
-      s1.textContent = [p.marque, p.format].filter(Boolean).join(' · ') + (r.source === 'off' ? '  (trouvé sur Open Food Facts)' : '');
+      s1.textContent = [p.marque, p.format].filter(Boolean).join(' · ') +
+        (r.source && r.source !== 'produits' ? '  (trouvé sur ' + (r.sourceNom || r.source) + ')' : '');
     }
     s2.textContent = texteInventaire(r.inventaire);
     titre.append(h, s1, s2);
 
-    // Champs du produit : affichés si inconnu, ou si le nom trouvé est vide
-    const montrerChamps = inconnu || !p.nom;
+    // Champs du produit : affichés si inconnu, si le nom est vide, ou s'il vient d'une base souvent en anglais
+    const baseAnglaise = ['upcitemdb', 'usda'].includes(r.source);
+    const montrerChamps = inconnu || !p.nom || baseAnglaise;
     $('champs-produit').hidden = !montrerChamps;
     $('f-nom').value = p ? (p.nom || '') : '';
     $('f-marque').value = p ? (p.marque || '') : '';
@@ -403,7 +405,9 @@
     if (rienARetirer) {
       afficher('Ce produit n\'est pas dans l\'inventaire. Passe en mode « J\'ajoute » si tu veux l\'ajouter.', 'erreur');
     } else {
-      afficher(inconnu ? 'Remplis le nom, puis confirme.' : 'Vérifie les choix, puis confirme.', 'info');
+      afficher(inconnu ? 'Remplis le nom, puis confirme.'
+        : baseAnglaise ? 'Le nom vient d\'une base américaine : corrige-le ou traduis-le au besoin, puis confirme.'
+        : 'Vérifie les choix, puis confirme.', 'info');
     }
   }
 
