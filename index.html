@@ -89,6 +89,34 @@
   #m-image-boutons { flex: 1; }
   #m-image-boutons button { margin-top: 6px; padding: 10px; font-size: 15px; }
   #m-photo { display: none; }
+  /* Grand écran (ordinateur) : page centrée et plus large */
+  @media (min-width: 800px) {
+    body { max-width: 980px; margin: 0 auto; padding: 24px; }
+    #video-zone { max-width: 560px; }
+  }
+  #aide-ordi { margin: 10px 0 0; }
+  /* Onglet Produits */
+  .barre-produits { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .barre-produits input, .barre-produits select { flex: 1; min-width: 180px; width: auto; }
+  .barre-produits button { width: auto; margin: 0; padding: 12px 16px; }
+  #table-produits { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; margin-top: 12px; font-size: 15px; }
+  #table-produits th { text-align: left; font-size: 13px; color: #5f6368; padding: 10px 8px; background: #f1f3f4; cursor: pointer; user-select: none; }
+  #table-produits td { padding: 8px; border-top: 1px solid #eceef1; vertical-align: middle; }
+  #table-produits tr:hover td { background: #f8f9fb; }
+  #table-produits .vignette { width: 40px; height: 40px; cursor: default; }
+  #table-produits .nom-produit { font-weight: bold; }
+  #table-produits small { color: #5f6368; }
+  #table-produits .code { font-family: monospace; font-size: 13px; color: #5f6368; }
+  #table-produits td.actions { white-space: nowrap; text-align: right; }
+  #table-produits td.actions button { width: auto; margin: 0 0 0 4px; padding: 8px 12px; font-size: 14px; }
+  #table-produits td.actions button.supprimer { background: #fce8e6; color: #c5221f; }
+  #table-produits td.actions button.supprimer.confirmer { background: #d93025; color: #fff; }
+  #form-produit .grille { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  #p-image-zone { display: flex; gap: 12px; align-items: center; }
+  #p-image { width: 96px; height: 96px; flex: none; border-radius: 10px; object-fit: contain; background: #f1f3f4; }
+  #p-image-boutons button { margin-top: 6px; padding: 10px; font-size: 15px; width: auto; }
+  #p-fichier { display: none; }
+  #message-prod { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 16px; background: #fff; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
 </style>
 </head>
@@ -107,6 +135,7 @@
     <div class="bascule" id="onglets">
       <button data-v="scanner" class="actif">Scanner</button>
       <button data-v="inventaire">Inventaire</button>
+      <button data-v="produits" hidden>Produits</button>
     </div>
 
     <div id="vue-scanner">
@@ -118,6 +147,7 @@
     </div>
 
     <div id="zone-scan">
+      <p id="aide-ordi" class="sous" hidden>Tape le code-barre et appuie sur Entrée (un lecteur de codes-barres USB fonctionne aussi).</p>
       <div id="video-zone">
         <video id="video" playsinline muted></video>
         <div id="cadre"></div>
@@ -286,13 +316,67 @@
       <div id="liste-inv"></div>
     </div>
 
+    <div id="vue-produits" hidden>
+      <div class="barre-produits">
+        <button id="btn-nouveau-produit">+ Nouveau produit</button>
+        <input id="recherche-produits" type="search" placeholder="Chercher (nom, marque, code)">
+        <select id="filtre-categorie"><option value="">Toutes les catégories</option></select>
+        <button id="btn-rafraichir-produits" class="secondaire">Rafraîchir</button>
+      </div>
+      <div id="form-produit" class="carte" hidden>
+        <h2 id="p-titre">Nouveau produit</h2>
+        <div class="grille">
+          <div>
+            <label for="p-nom">Produit *</label>
+            <input id="p-nom" type="text" autocomplete="off">
+            <label for="p-marque">Marque</label>
+            <input id="p-marque" type="text">
+            <label for="p-format">Format</label>
+            <input id="p-format" type="text" placeholder="ex. 400 g, 1 L">
+            <label for="p-code">Code-barre</label>
+            <input id="p-code" type="text" inputmode="numeric" placeholder="laisser vide si le produit n'en a pas">
+          </div>
+          <div>
+            <label for="p-categorie">Catégorie</label>
+            <select id="p-categorie"></select>
+            <label for="p-emplacement">Emplacement habituel</label>
+            <select id="p-emplacement">
+              <option value="">—</option><option>Garde-manger</option><option>Frigo</option><option>Congélateur</option>
+            </select>
+            <label>Image</label>
+            <div id="p-image-zone">
+              <img id="p-image" alt="" hidden>
+              <div id="p-image-boutons">
+                <button id="p-choisir-image" class="secondaire">Choisir une image</button>
+                <button id="p-sans-image" class="secondaire">Retirer l'image</button>
+              </div>
+              <input type="file" id="p-fichier" accept="image/*">
+            </div>
+          </div>
+        </div>
+        <p id="p-info" class="sous"></p>
+        <div class="boutons">
+          <button id="p-annuler" class="secondaire">Annuler</button>
+          <button id="p-enregistrer">Enregistrer</button>
+        </div>
+      </div>
+      <div id="message-prod" class="info">Chargement…</div>
+      <table id="table-produits">
+        <thead><tr>
+          <th></th><th data-tri="nom">Produit</th><th data-tri="categorie">Catégorie</th><th data-tri="emplacement">Emplacement</th>
+          <th data-tri="code">Code-barre</th><th data-tri="enInventaire">En inventaire</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
     <a id="lien-cle" href="#">Changer la clé secrète</a>
     <a id="lien-dev" href="#"></a>
     <p id="version"></p>
   </div>
 
 <script>
-  const VERSION = '0.15';
+  const VERSION = '0.16';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -506,6 +590,7 @@
     $('zone-scan').hidden = false;
     courant = null;
     setTimeout(() => { occupe = false; }, 1200);
+    if (sansLecteur) $('code-manuel').focus();   // prêt pour le code suivant
   }
 
   // ---------- Images ----------
@@ -662,16 +747,16 @@
   // ---------- Onglets ----------
   document.querySelectorAll('#onglets button').forEach(b => b.onclick = () => {
     const vue = b.dataset.v;
-    if (vue === 'inventaire' && !$('fiche').hidden) { afficher('Termine ou annule la fiche en cours d\'abord.', 'erreur'); return; }
+    if (vue !== 'scanner' && !$('fiche').hidden) { afficher('Termine ou annule la fiche en cours d\'abord.', 'erreur'); return; }
     bascule('onglets', vue);
     $('vue-scanner').hidden = vue !== 'scanner';
     $('vue-inventaire').hidden = vue !== 'inventaire';
-    if (vue === 'inventaire') {
-      if (flux) $('btn-stop').onclick();
-      chargerInventaire();
-    } else {
-      envoyerTout();
-    }
+    $('vue-produits').hidden = vue !== 'produits';
+    if (vue !== 'scanner' && flux) $('btn-stop').onclick();
+    if (vue !== 'inventaire') envoyerTout();
+    if (vue === 'inventaire') chargerInventaire();
+    if (vue === 'produits') chargerCatalogue();
+    if (vue === 'scanner' && sansLecteur) $('code-manuel').focus();
   });
 
   // ---------- Onglet Inventaire ----------
@@ -1064,6 +1149,149 @@
     }
   };
 
+  // ---------- Onglet Produits (gestion de la liste, sur grand écran) ----------
+  let catalogue = [], triProduits = 'nom', enEdition = null, imageProduit;
+  $('p-categorie').innerHTML = $('f-categorie').innerHTML;
+  [...$('f-categorie').options].slice(1).forEach(o => $('filtre-categorie').append(new Option(o.value, o.value)));
+  $('filtre-categorie').append(new Option('(sans catégorie)', '-'));
+  function afficherProd(texte, type) { $('message-prod').textContent = texte; $('message-prod').className = type; }
+
+  async function chargerCatalogue() {
+    afficherProd('Chargement des produits…', 'info');
+    try {
+      catalogue = (await appeler({ action: 'catalogue' })).produits || [];
+      dessinerCatalogue();
+      afficherProd(catalogue.length + ' produit(s) dans la liste. Clique sur un titre de colonne pour trier.', 'info');
+    } catch (err) { afficherProd('Erreur : ' + err.message, 'erreur'); }
+  }
+
+  function dessinerCatalogue() {
+    const filtre = sansAccents($('recherche-produits').value.trim());
+    const cat = $('filtre-categorie').value;
+    const lignes = catalogue
+      .filter(p => !filtre || sansAccents([p.nom, p.marque, p.format, p.code].join(' ')).includes(filtre))
+      .filter(p => !cat || (cat === '-' ? !p.categorie : p.categorie === cat))
+      .sort((a, b) => triProduits === 'enInventaire' ? b.enInventaire - a.enInventaire
+        : String(a[triProduits] || '\uffff').localeCompare(String(b[triProduits] || '\uffff'), 'fr') || a.nom.localeCompare(b.nom, 'fr'));
+    const corps = document.querySelector('#table-produits tbody');
+    corps.innerHTML = '';
+    lignes.forEach(p => {
+      const tr = document.createElement('tr');
+      const td = () => { const c = document.createElement('td'); tr.append(c); return c; };
+      // image
+      const c0 = td();
+      if (imageSure(p.image)) {
+        const img = document.createElement('img'); img.className = 'vignette'; img.alt = ''; img.loading = 'lazy'; img.src = p.image;
+        img.onerror = () => { const l = lettre(p); l.onclick = null; l.style.cursor = 'default'; img.replaceWith(l); }; c0.append(img);
+      } else { const l = lettre(p); l.onclick = null; l.style.cursor = 'default'; c0.append(l); }
+      // produit
+      const c1 = td();
+      const n = document.createElement('div'); n.className = 'nom-produit'; n.textContent = p.nom;
+      const sm = document.createElement('small'); sm.textContent = [p.marque, p.format].filter(Boolean).join(' · ');
+      c1.append(n, sm);
+      td().textContent = p.categorie || '—';
+      td().textContent = p.emplacement || '—';
+      const cc = td(); cc.className = 'code'; cc.textContent = p.code || 'sans code';
+      td().textContent = p.enInventaire ? p.enInventaire : '—';
+      // actions
+      const ca = td(); ca.className = 'actions';
+      const bm = document.createElement('button'); bm.className = 'secondaire'; bm.textContent = 'Modifier';
+      bm.onclick = () => ouvrirProduit(p);
+      const bs = document.createElement('button'); bs.className = 'supprimer'; bs.textContent = 'Supprimer';
+      let attente = null;
+      bs.onclick = async () => {
+        if (!attente) {
+          bs.textContent = 'Confirmer ?'; bs.classList.add('confirmer');
+          attente = setTimeout(() => { attente = null; bs.textContent = 'Supprimer'; bs.classList.remove('confirmer'); }, 4000);
+          afficherProd('Supprimer « ' + p.nom + ' » de la liste des produits ?' +
+            (p.enInventaire ? ' Il en reste ' + p.enInventaire + ' en inventaire : ces lignes resteront.' : '') + ' Clique sur « Confirmer ? ».', 'erreur');
+          return;
+        }
+        clearTimeout(attente);
+        bs.disabled = true;
+        try {
+          await appeler({ action: 'supprimerProduit', ligne: p.ligne, avant: { code: p.code, nom: p.nom } });
+          produitsConnus = null;
+          if (enEdition === p) fermerProduit();
+          await chargerCatalogue();
+          afficherProd('« ' + p.nom + ' » a été supprimé de la liste des produits.', 'ok');
+        } catch (err) { afficherProd('Erreur : ' + err.message, 'erreur'); bs.disabled = false; }
+      };
+      ca.append(bm, bs);
+      corps.append(tr);
+    });
+    if (!lignes.length) {
+      const tr = document.createElement('tr'); const c = document.createElement('td'); c.colSpan = 7; c.className = 'sous';
+      c.textContent = catalogue.length ? 'Aucun produit ne correspond.' : 'La liste des produits est vide.';
+      tr.append(c); corps.append(tr);
+    }
+  }
+
+  function ouvrirProduit(p) {
+    enEdition = p || null;
+    imageProduit = undefined;
+    $('p-titre').textContent = p ? 'Modifier « ' + p.nom + ' »' : 'Nouveau produit';
+    $('p-nom').value = p ? p.nom : ''; $('p-marque').value = p ? p.marque : ''; $('p-format').value = p ? p.format : '';
+    $('p-code').value = p ? p.code : ''; $('p-categorie').value = p ? p.categorie : ''; $('p-emplacement').value = p ? p.emplacement : '';
+    montrerImage($('p-image'), p && p.image);
+    $('p-sans-image').hidden = !(p && p.image);
+    $('p-info').textContent = p && p.enInventaire
+      ? 'Nom, marque, format et code-barre seront aussi changés sur les ' + p.enInventaire + ' unité(s) en inventaire.' : '';
+    $('form-produit').hidden = false;
+    $('btn-nouveau-produit').hidden = true;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    $('p-nom').focus();
+  }
+  function fermerProduit() { enEdition = null; $('form-produit').hidden = true; $('btn-nouveau-produit').hidden = false; }
+
+  $('btn-nouveau-produit').onclick = () => ouvrirProduit(null);
+  $('p-annuler').onclick = () => { fermerProduit(); afficherProd('Annulé.', 'info'); };
+  $('recherche-produits').oninput = dessinerCatalogue;
+  $('filtre-categorie').onchange = dessinerCatalogue;
+  $('btn-rafraichir-produits').onclick = chargerCatalogue;
+  document.querySelectorAll('#table-produits th[data-tri]').forEach(th => th.onclick = () => { triProduits = th.dataset.tri; dessinerCatalogue(); });
+  $('p-choisir-image').onclick = () => $('p-fichier').click();
+  $('p-fichier').onchange = async function () {
+    const fichier = this.files[0];
+    this.value = '';
+    if (!fichier) return;
+    try {
+      imageProduit = await vignette(fichier);
+      montrerImage($('p-image'), imageProduit);
+      $('p-sans-image').hidden = false;
+    } catch (e) { afficherProd('Impossible de lire cette image : ' + e.message, 'erreur'); }
+  };
+  $('p-sans-image').onclick = () => { imageProduit = ''; montrerImage($('p-image'), ''); $('p-sans-image').hidden = true; };
+
+  $('p-enregistrer').onclick = async () => {
+    const nom = $('p-nom').value.trim();
+    if (!nom) { afficherProd('Le nom du produit est obligatoire.', 'erreur'); $('p-nom').focus(); return; }
+    const code = $('p-code').value.replace(/\D/g, '');
+    if ($('p-code').value.trim() && !code) { afficherProd('Le code-barre ne doit contenir que des chiffres.', 'erreur'); return; }
+    const probleme = code ? verifierCode(code) : '';
+    if (probleme) { afficherProd('Code-barre ' + code + ' : ' + probleme, 'erreur'); $('p-code').focus(); return; }
+    const p = enEdition;
+    $('p-enregistrer').disabled = true;
+    afficherProd('Enregistrement…', 'info');
+    try {
+      const r = await appeler({
+        action: 'enregistrerProduit', ligne: p ? p.ligne : 0, avant: p ? { code: p.code, nom: p.nom } : null,
+        produit: {
+          nom: nom, marque: $('p-marque').value.trim(), format: $('p-format').value.trim(), code: code,
+          categorie: $('p-categorie').value, emplacement: $('p-emplacement').value,
+          image: imageProduit   // absente si inchangée
+        }
+      });
+      produitsConnus = null;
+      fermerProduit();
+      await chargerCatalogue();
+      afficherProd((r.nouveau ? 'Ajouté : ' : 'Modifié : ') + r.nom +
+        (r.lignesInventaire ? ' (' + r.lignesInventaire + ' ligne(s) d\'inventaire mises à jour)' : '') + '.', 'ok');
+    } catch (err) { afficherProd('Erreur : ' + err.message, 'erreur'); }
+    finally { $('p-enregistrer').disabled = false; }
+  };
+  $('form-produit').addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') { ev.preventDefault(); $('p-enregistrer').onclick(); } });
+
   window.addEventListener('pagehide', () => { envoyerTout(true); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) envoyerTout(true); });
 
@@ -1151,10 +1379,37 @@
     $('code-manuel').value = '';
     traiterCode(code);
   };
+  // Entrée = OK (pratique au clavier, et un lecteur de codes-barres USB tape le code puis Entrée)
+  $('code-manuel').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); $('btn-manuel').onclick(); } });
+
+  // ---------- Adaptation à l'appareil ----------
+  // Sans lecture de codes-barres (ex. Chrome sous Windows) : on cache la caméra et on met le champ du code en avant
+  let sansLecteur = false;
+  async function adapterAppareil() {
+    const grandEcran = window.matchMedia('(min-width: 800px)').matches;
+    document.querySelector('#onglets button[data-v="produits"]').hidden = !grandEcran;
+    let lecteur = false;
+    if ('BarcodeDetector' in window) {
+      try { lecteur = (await BarcodeDetector.getSupportedFormats()).some(f => formats.includes(f)); } catch (e) { lecteur = false; }
+    }
+    sansLecteur = !lecteur;
+    if (sansLecteur) {
+      ['video-zone', 'btn-camera', 'btn-photo'].forEach(id => $(id).hidden = true);
+      $('btn-stop').hidden = true;
+      $('aide-ordi').hidden = false;
+      const zone = $('zone-scan');
+      zone.insertBefore(document.querySelector('#zone-scan .ligne'), zone.firstChild);
+      zone.insertBefore($('aide-ordi'), zone.firstChild);
+      $('code-manuel').placeholder = 'Code-barre';
+      if (grandEcran) $('code-manuel').focus();
+    }
+  }
 
   $('version').textContent = 'Version ' + VERSION;
   majLienDev();
   afficherEcran();
+  adapterAppareil();
+  window.matchMedia('(min-width: 800px)').addEventListener('change', adapterAppareil);
 </script>
 </body>
 </html>
