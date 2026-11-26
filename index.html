@@ -67,6 +67,15 @@
   #suggestions button { display: block; width: 100%; text-align: left; background: #f1f3f4; color: #1f2328; margin-top: 6px; padding: 10px 12px; font-size: 16px; }
   #suggestions button small { display: block; color: #5f6368; font-size: 13px; }
   #message-inv { margin-top: 12px; padding: 12px; border-radius: 10px; font-size: 16px; background: #fff; }
+  #diagnostic { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: #fff8e1; border: 1px dashed #f9ab00; font-size: 14px; }
+  #diagnostic h3 { font-size: 14px; margin: 0 0 6px; color: #b06000; }
+  #diagnostic table { width: 100%; border-collapse: collapse; }
+  #diagnostic td { padding: 4px 4px; border-top: 1px solid #f3e1b0; vertical-align: top; }
+  #diagnostic .d-ok { color: #1e8e3e; font-weight: bold; }
+  #diagnostic .d-non { color: #80868b; }
+  #diagnostic .d-pb { color: #d93025; font-weight: bold; }
+  #diagnostic small { color: #5f6368; }
+  #lien-dev { display: block; margin-top: 8px; text-align: center; color: #5f6368; font-size: 14px; }
   #version { text-align: center; color: #9aa0a6; font-size: 12px; margin: 8px 0 0; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
 </style>
@@ -163,6 +172,8 @@
         <input id="f-date" type="date">
       </div>
 
+      <div id="diagnostic" hidden></div>
+
       <div class="boutons">
         <button id="btn-annuler" class="secondaire">Annuler</button>
         <button id="btn-confirmer">Confirmer</button>
@@ -251,11 +262,12 @@
     </div>
 
     <a id="lien-cle" href="#">Changer la clé secrète</a>
+    <a id="lien-dev" href="#"></a>
     <p id="version"></p>
   </div>
 
 <script>
-  const VERSION = '0.11';
+  const VERSION = '0.12';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -278,6 +290,41 @@
   }
   $('btn-cle').onclick = () => { const c = $('champ-cle').value.trim(); if (c) { ecrireCle(c); afficherEcran(); } };
   $('lien-cle').onclick = ev => { ev.preventDefault(); ecrireCle(''); afficherEcran(); };
+
+  // ---------- Mode développement (diagnostic des bases de données) ----------
+  function modeDev() { try { return localStorage.getItem('modeDev') === '1'; } catch (e) { return false; } }
+  function majLienDev() { $('lien-dev').textContent = 'Mode développement : ' + (modeDev() ? 'activé (toucher pour désactiver)' : 'désactivé'); }
+  $('lien-dev').onclick = ev => {
+    ev.preventDefault();
+    try { localStorage.setItem('modeDev', modeDev() ? '0' : '1'); } catch (e) {}
+    majLienDev();
+    afficher(modeDev() ? 'Mode développement activé : chaque scan interroge toutes les bases (UPCitemdb : 100 recherches par jour).' : 'Mode développement désactivé.', 'info');
+  };
+
+  function afficherDiagnostic(diag) {
+    const zone = $('diagnostic');
+    zone.innerHTML = '';
+    zone.hidden = !diag;
+    if (!diag) return;
+    const h = document.createElement('h3'); h.textContent = 'Diagnostic des bases de données';
+    const t = document.createElement('table');
+    diag.forEach(r => {
+      const tr = document.createElement('tr');
+      const td1 = document.createElement('td'), td2 = document.createElement('td');
+      const marque = r.statut === 'trouvé' ? '✓' : r.statut === 'absent' || r.statut === 'pas cherché' ? '✗' : '⚠';
+      const st = document.createElement('span');
+      st.className = r.statut === 'trouvé' ? 'd-ok' : r.statut === 'absent' || r.statut === 'pas cherché' ? 'd-non' : 'd-pb';
+      st.textContent = marque + ' ' + r.statut;
+      td1.textContent = r.nomBase || r.base;
+      td2.append(st);
+      if (r.produit && r.produit.nom) { td2.append(' : ' + [r.produit.nom, r.produit.marque, r.produit.format].filter(Boolean).join(' · ')); }
+      const infos = [r.http ? 'HTTP ' + r.http : '', r.ms ? r.ms + ' ms' : '', r.detail].filter(Boolean).join(' · ');
+      if (infos) { const sm = document.createElement('small'); sm.textContent = ' (' + infos + ')'; td2.append(document.createElement('br'), sm); }
+      tr.append(td1, td2);
+      t.append(tr);
+    });
+    zone.append(h, t);
+  }
 
   // ---------- Affichage ----------
   function afficher(texte, type) { $('message').textContent = texte; $('message').className = type; }
@@ -348,7 +395,7 @@
     if (navigator.vibrate) navigator.vibrate(120);
     afficher('Recherche du produit ' + code + '…', 'info');
     try {
-      const r = await appeler({ action: 'chercher', code: code });
+      const r = await appeler({ action: 'chercher', code: code, diagnostic: modeDev() });
       courant = r;
       ouvrirFiche(r);
     } catch (err) {
@@ -375,6 +422,7 @@
     }
     s2.textContent = texteInventaire(r.inventaire);
     titre.append(h, s1, s2);
+    afficherDiagnostic(r.diagnostic || null);
 
     // Champs du produit : affichés si inconnu, si le nom est vide, ou s'il vient d'une base souvent en anglais
     const baseAnglaise = ['upcitemdb', 'usda'].includes(r.source);
@@ -941,6 +989,7 @@
   };
 
   $('version').textContent = 'Version ' + VERSION;
+  majLienDev();
   afficherEcran();
 </script>
 </body>
