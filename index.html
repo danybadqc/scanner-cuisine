@@ -131,6 +131,11 @@
   .r-ligne .nb { min-width: 30px; text-align: center; font-size: 18px; font-weight: bold; }
   .r-ligne button { width: 44px; margin: 0; padding: 8px; font-size: 18px; }
   .r-ligne .vignette { width: 40px; height: 40px; cursor: default; }
+  .r-ligne { flex-wrap: wrap; }
+  .r-ligne .infos { flex: 1 1 120px; }
+  .r-ligne button.photo { order: 10; flex: 1 1 100%; width: 100%; margin-top: 4px; padding: 10px; font-size: 15px; background: #fef7e0; color: #b06000; }
+  #rafale-photo { display: none; }
+  #btn-completer { background: #fef7e0; color: #b06000; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
 </style>
 </head>
@@ -246,12 +251,14 @@
         <button id="btn-annuler" class="secondaire">Annuler</button>
         <button id="btn-confirmer">Confirmer</button>
       </div>
+      <button id="btn-completer" hidden>Compléter sans ajouter (garder la quantité)</button>
       <button id="btn-oublier" hidden>Oublier ce produit (mode développement)</button>
     </div>
 
     <div id="message" class="info">Prêt à scanner.</div>
     <div id="rafale-resultats" hidden>
       <p id="rafale-compteur"></p>
+      <input type="file" id="rafale-photo" accept="image/*" capture="environment">
       <div id="rafale-liste"></div>
     </div>
     <div id="historique"></div>
@@ -403,7 +410,7 @@
   </div>
 
 <script>
-  const VERSION = '0.17';
+  const VERSION = '0.18';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -594,6 +601,7 @@
     $('champs-produit').hidden = !montrerChamps;
     $('f-nom').value = p && !aCompleter ? (p.nom || '') : '';
     if (aCompleter) h.textContent = 'Produit à compléter';
+    $('btn-completer').hidden = !aCompleter;
     $('f-marque').value = p ? (p.marque || '') : '';
     $('f-format').value = p ? (p.format || '') : '';
 
@@ -689,6 +697,7 @@
       if (r.produit.nom) $('f-nom').value = r.produit.nom;
       if (r.produit.marque) $('f-marque').value = r.produit.marque;
       if (r.produit.format) $('f-format').value = r.produit.format;
+      if (r.produit.categorie && !$('f-categorie').value) $('f-categorie').value = r.produit.categorie;
       if (!fiche.source) fiche.source = 'photo';
       afficher('Produit identifié sur la photo. Vérifie le nom, la marque et le format, puis confirme.', 'ok');
     } catch (err) {
@@ -726,6 +735,24 @@
     } finally {
       $('btn-oublier').disabled = false;
     }
+  };
+
+  // Produit « À compléter » : enregistrer son nom sans changer la quantité
+  $('btn-completer').onclick = async () => {
+    if (!courant) return;
+    const nom = $('f-nom').value.trim();
+    if (!nom) { afficher('Écris le nom du produit (ou utilise la photo).', 'erreur'); return; }
+    $('btn-completer').disabled = true;
+    afficher('Enregistrement…', 'info');
+    try {
+      const r = await appeler({
+        action: 'completerFiche', code: courant.code, image: courant.imagePhoto || '',
+        produit: { nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value }
+      });
+      fermerFiche();
+      afficher('Complété : ' + r.nom + (r.lignesInventaire ? ' (quantités inchangées dans l\'inventaire)' : '') + '.', 'ok');
+    } catch (err) { afficher('Erreur : ' + err.message, 'erreur'); }
+    finally { $('btn-completer').disabled = false; }
   };
 
   $('btn-annuler').onclick = () => { fermerFiche(); afficher('Annulé. Prêt à scanner.', 'info'); };
@@ -833,6 +860,29 @@
     dessinerRafale();
   }
 
+  // Photo d'un produit introuvable pendant la séance : vignette + lecture par Gemini, en arrière-plan
+  let lignePhoto = null;
+  $('rafale-photo').onchange = async function () {
+    const fichier = this.files[0];
+    this.value = '';
+    const l = lignePhoto;
+    lignePhoto = null;
+    if (!fichier || !l) return;
+    l.photoEnCours = true; l.erreur = '';
+    try { l.image = await vignette(fichier); } catch (e) {}
+    dessinerRafale();
+    try {
+      const r = await appeler({ action: 'completerPhoto', code: l.code, image: await photoReduite(fichier), vignette: l.image });
+      l.image = r.image || l.image;
+      if (r.identifie) { l.nom = r.nom; l.statut = 'ajouté'; l.complete = true; bip(true); }
+      else l.erreur = r.erreurGemini ? 'photo gardée. ' + r.erreurGemini : 'photo gardée; produit non reconnu, à nommer plus tard.';
+    } catch (err) {
+      l.erreur = err.message;
+    }
+    l.photoEnCours = false;
+    dessinerRafale();
+  };
+
   function dessinerRafale() {
     $('rafale-resultats').hidden = mode !== 'rafale' || !rafaleLignes.length;
     const total = rafaleLignes.reduce((n, l) => n + l.nb, 0);
@@ -844,15 +894,17 @@
     liste.innerHTML = '';
     rafaleLignes.forEach(l => {
       const el = document.createElement('div');
-      el.className = 'r-ligne' + (l.erreur ? ' erreur-r' : l.statut === 'à compléter' ? ' a-completer' : '');
+      el.className = 'r-ligne' + (l.statut === 'à compléter' ? ' a-completer' : l.erreur ? ' erreur-r' : '');
       let img;
       if (imageSure(l.image)) { img = document.createElement('img'); img.className = 'vignette'; img.alt = ''; img.src = l.image; img.onerror = () => img.remove(); }
       const infos = document.createElement('div'); infos.className = 'infos';
       const n = document.createElement('div'); n.className = 'nom'; n.textContent = l.nom;
       const e = document.createElement('div'); e.className = 'etat';
-      e.textContent = l.erreur ? 'Erreur : ' + l.erreur
+      e.textContent = l.photoEnCours ? 'Lecture de la photo…'
+        : l.erreur ? (l.statut === 'à compléter' ? 'À compléter : ' : 'Erreur : ') + l.erreur
         : l.statut === 'recherche' ? 'Recherche…'
-        : (l.statut === 'à compléter' ? 'Introuvable : à compléter plus tard · ' : '') + l.emp + (l.attente ? ' · envoi en cours…' : '');
+        : (l.statut === 'à compléter' ? 'Introuvable : prends-le en photo, ou complète-le plus tard · '
+          : l.complete ? 'Identifié par la photo · ' : '') + l.emp + (l.attente ? ' · envoi en cours…' : '');
       infos.append(n, e);
       const moins = document.createElement('button'); moins.className = 'secondaire'; moins.textContent = '−';
       moins.disabled = l.nb <= 0;
@@ -861,7 +913,15 @@
       const plus = document.createElement('button'); plus.className = 'secondaire'; plus.textContent = '+';
       plus.onclick = () => { const emp = empRafale; empRafale = l.emp; rafaleScan(l.code); empRafale = emp; };
       if (img) el.append(img);
-      el.append(infos, moins, nb, plus);
+      el.append(infos);
+      if (l.statut === 'à compléter' && l.nb > 0) {
+        const ph = document.createElement('button'); ph.className = 'photo';
+        ph.textContent = l.image ? 'Reprendre la photo' : 'Prendre en photo pour l\'identifier';
+        ph.disabled = !!l.photoEnCours;
+        ph.onclick = () => { lignePhoto = l; $('rafale-photo').click(); };
+        el.append(ph);
+      }
+      el.append(moins, nb, plus);
       liste.append(el);
     });
   }
