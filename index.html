@@ -111,7 +111,14 @@
   #table-produits td.actions button { width: auto; margin: 0 0 0 4px; padding: 8px 12px; font-size: 14px; }
   #table-produits td.actions button.supprimer { background: #fce8e6; color: #c5221f; }
   #table-produits td.actions button.supprimer.confirmer { background: #d93025; color: #fff; }
-  #form-produit .grille { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .grille { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+  .grille.une-colonne { grid-template-columns: 1fr; }
+  @media (max-width: 799px) { .grille { grid-template-columns: 1fr; } }
+  #f-code { background: #f1f3f4; color: #5f6368; font-family: monospace; }
+  #f-image-zone { display: flex; gap: 12px; align-items: center; }
+  #f-image { width: 96px; height: 96px; flex: none; border-radius: 10px; object-fit: contain; background: #f1f3f4; }
+  #f-image-boutons button { margin-top: 6px; padding: 10px; font-size: 15px; width: auto; }
+  #f-fichier { display: none; }
   #p-image-zone { display: flex; gap: 12px; align-items: center; }
   #p-image { width: 96px; height: 96px; flex: none; border-radius: 10px; object-fit: contain; background: #f1f3f4; }
   #p-image-boutons button { margin-top: 6px; padding: 10px; font-size: 15px; width: auto; }
@@ -210,17 +217,26 @@
         <img id="fiche-image" alt="" hidden>
       </div>
 
-      <div id="champs-produit" hidden>
+      <div id="zone-gemini" hidden>
         <button id="btn-photo-produit" class="secondaire">Photographier le produit pour l'identifier</button>
         <input type="file" id="photo-produit" accept="image/*" capture="environment">
-        <label for="f-nom">Nom du produit *</label>
-        <input id="f-nom" type="text" placeholder="ex. Riz jasmin">
+      </div>
+
+      <!-- Même formulaire que « + Nouveau produit » de l'onglet Produits -->
+      <div class="grille" id="fiche-grille">
+      <div>
+      <div id="champs-produit" hidden>
+        <label for="f-nom">Produit *</label>
+        <input id="f-nom" type="text" autocomplete="off" placeholder="ex. Riz jasmin">
         <label for="f-marque">Marque</label>
         <input id="f-marque" type="text" placeholder="ex. Kirkland">
         <label for="f-format">Format</label>
-        <input id="f-format" type="text" placeholder="ex. 8 kg">
+        <input id="f-format" type="text" placeholder="ex. 400 g, 1 L">
+        <label for="f-code">Code-barre</label>
+        <input id="f-code" type="text" readonly>
       </div>
-
+      </div>
+      <div>
       <div id="champ-categorie">
         <label for="f-categorie">Catégorie</label>
         <select id="f-categorie">
@@ -238,6 +254,21 @@
           <option>Boissons</option>
           <option>Autre</option>
         </select>
+      </div>
+      <div id="champs-nouveau" hidden>
+        <label for="f-contenu">Contenu du paquet (format familial)</label>
+        <input id="f-contenu" type="text" placeholder="ex. 9 poitrines (laisser vide sinon)">
+        <label>Image</label>
+        <div id="f-image-zone">
+          <img id="f-image" alt="" hidden>
+          <div id="f-image-boutons">
+            <button id="f-choisir-image" class="secondaire">Choisir une image</button>
+            <button id="f-sans-image" class="secondaire">Retirer l'image</button>
+          </div>
+          <input type="file" id="f-fichier" accept="image/*">
+        </div>
+      </div>
+      </div>
       </div>
 
       <label>Emplacement</label>
@@ -457,7 +488,7 @@
   </div>
 
 <script>
-  const VERSION = '0.19';
+  const VERSION = '0.20';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -644,8 +675,17 @@
     // Champs du produit : affichés si inconnu, si le nom est vide ou « À compléter », ou s'il vient d'une base souvent en anglais
     const baseAnglaise = ['upcitemdb', 'usda'].includes(r.source);
     const aCompleter = !!(p && estACompleter(p.nom));
-    const montrerChamps = inconnu || !p.nom || baseAnglaise || aCompleter;
+    // Produit absent de ta liste (introuvable, ou trouvé en ligne) ou « À compléter » : le formulaire complet, prérempli
+    const nouveau = r.source !== 'produits' || aCompleter;
+    const montrerChamps = (inconnu || !p.nom || baseAnglaise || nouveau) && mode !== 'retirer';
     $('champs-produit').hidden = !montrerChamps;
+    $('zone-gemini').hidden = !montrerChamps;
+    $('champs-nouveau').hidden = !(nouveau && mode !== 'retirer');
+    $('fiche-grille').classList.toggle('une-colonne', !montrerChamps);
+    $('f-code').value = r.code;
+    $('f-contenu').value = '';
+    r.imageChoisie = undefined;   // undefined = image trouvée (ou photo Gemini); '' = retirée; sinon image choisie
+    majImageFiche(r);
     $('f-nom').value = p && !aCompleter ? (p.nom || '') : '';
     if (aCompleter) h.textContent = 'Produit à compléter';
     $('btn-completer').hidden = !aCompleter;
@@ -654,7 +694,7 @@
 
     // Catégorie : cachée si elle vient de ta liste; préremplie (à vérifier) si elle a été devinée d'après une base
     $('f-categorie').value = p && p.categorie ? p.categorie : '';
-    $('champ-categorie').hidden = mode === 'retirer' || !!(p && p.categorie && r.source === 'produits');
+    $('champ-categorie').hidden = mode === 'retirer' || !!(p && p.categorie && r.source === 'produits' && !aCompleter);
 
     // Emplacement par défaut
     if (mode === 'retirer' && r.inventaire && r.inventaire.length) emplacement = r.inventaire[0].emplacement;
@@ -709,6 +749,32 @@
     if (imageSure(src)) { img.src = src; img.hidden = false; } else { img.removeAttribute('src'); img.hidden = true; }
   }
 
+  // Image du formulaire de la fiche : choisie > photo Gemini > image trouvée en ligne
+  function imageFiche(r) {
+    if (r.imageChoisie !== undefined) return r.imageChoisie;
+    return r.imagePhoto || (r.produit && r.produit.image) || '';
+  }
+  function imageAEnvoyer(r) {
+    if (r.imageChoisie === '') return '-';                         // retirée volontairement
+    if (r.imageChoisie) return r.imageChoisie;
+    return r.imagePhoto || (r.source !== 'produits' && r.produit && r.produit.image) || '';
+  }
+  function majImageFiche(r) {
+    const src = imageFiche(r);
+    montrerImage($('fiche-image'), src);
+    montrerImage($('f-image'), src);
+    $('f-sans-image').hidden = !src;
+  }
+  $('f-choisir-image').onclick = () => $('f-fichier').click();
+  $('f-fichier').onchange = async function () {
+    const fichier = this.files[0];
+    this.value = '';
+    if (!fichier || !courant) return;
+    try { courant.imageChoisie = await vignette(fichier); majImageFiche(courant); }
+    catch (e) { afficher('Impossible de lire cette image : ' + e.message, 'erreur'); }
+  };
+  $('f-sans-image').onclick = () => { if (!courant) return; courant.imageChoisie = ''; majImageFiche(courant); };
+
   // ---------- Identification par photo de l'emballage ----------
   // Réduit la photo (côté le plus long : 1024 px) et la retourne en JPEG base64
   async function photoReduite(fichier) {
@@ -736,7 +802,8 @@
       const r = await appeler({ action: 'identifier', code: fiche.code, image: await photoReduite(fichier) });
       if (courant !== fiche) return;   // la fiche a été fermée entre-temps : on ignore la réponse
       fiche.imagePhoto = petite;       // la photo devient l'image du produit
-      montrerImage($('fiche-image'), petite);
+      if (fiche.imageChoisie === '') fiche.imageChoisie = undefined;
+      majImageFiche(fiche);
       if (!r.produit) {
         afficher('Je n\'ai pas reconnu le produit. Reprends la photo du devant de l\'emballage, ou tape le nom.', 'erreur');
         return;
@@ -793,8 +860,9 @@
     afficher('Enregistrement…', 'info');
     try {
       const r = await appeler({
-        action: 'completerFiche', code: courant.code, image: courant.imagePhoto || '',
-        produit: { nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value }
+        action: 'completerFiche', code: courant.code, image: courant.imageChoisie || courant.imagePhoto || '',
+        produit: { nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value,
+          contenu: $('f-contenu').value.trim() }
       });
       fermerFiche();
       afficher('Complété : ' + r.nom + (r.lignesInventaire ? ' (quantités inchangées dans l\'inventaire)' : '') + '.', 'ok');
@@ -807,7 +875,7 @@
   $('btn-confirmer').onclick = async () => {
     if (!courant) return;
     const nom = $('f-nom').value.trim();
-    if (!nom) { afficher('Le nom du produit est obligatoire.', 'erreur'); $('champs-produit').hidden = false; return; }
+    if (!nom) { afficher('Le nom du produit est obligatoire.', 'erreur'); $('champs-produit').hidden = false; $('zone-gemini').hidden = false; $('fiche-grille').classList.remove('une-colonne'); return; }
     if (!emplacement) { afficher('Choisis l\'emplacement.', 'erreur'); return; }
     if (mode === 'ajouter' && !$('champ-categorie').hidden && !$('f-categorie').value) { afficher('Choisis la catégorie.', 'erreur'); return; }
     $('btn-confirmer').disabled = true;
@@ -818,8 +886,9 @@
         quantite: parseInt($('f-qte').value) || 1, emplacement: emplacement, dateLimite: $('f-date').value || '',
         produit: {
           nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value,
-          // image : la photo prise, sinon celle de la base où le produit a été trouvé
-          image: courant.imagePhoto || (courant.source !== 'produits' && courant.produit && courant.produit.image) || ''
+          // image : choisie (ou retirée, « - »), sinon la photo prise, sinon celle de la base où le produit a été trouvé
+          image: imageAEnvoyer(courant),
+          contenu: $('champs-nouveau').hidden ? '' : $('f-contenu').value.trim()
         }
       });
       const verbe = r.mode === 'ajouter' ? 'Ajouté' : 'Retiré';
