@@ -119,6 +119,10 @@
   #f-image { width: 96px; height: 96px; flex: none; border-radius: 10px; object-fit: contain; background: #f1f3f4; }
   #f-image-boutons button { margin-top: 6px; padding: 10px; font-size: 15px; width: auto; }
   #f-fichier { display: none; }
+  textarea.composition { width: 100%; padding: 10px 12px; font-size: 16px; border: 1px solid #c4c8cd; border-radius: 10px; font-family: inherit; resize: vertical; }
+  .aide { font-size: 13px; color: #5f6368; margin: 4px 0 0; }
+  #f-boite { margin: 8px 0 0; padding: 10px 12px; border-radius: 10px; background: #e8f0fe; color: #174ea6; font-size: 15px; white-space: pre-line; }
+  #table-produits .boite { color: #174ea6; }
   #p-image-zone { display: flex; gap: 12px; align-items: center; }
   #p-image { width: 96px; height: 96px; flex: none; border-radius: 10px; object-fit: contain; background: #f1f3f4; }
   #p-image-boutons button { margin-top: 6px; padding: 10px; font-size: 15px; width: auto; }
@@ -217,6 +221,7 @@
         <img id="fiche-image" alt="" hidden>
       </div>
 
+      <p id="f-boite" hidden></p>
       <div id="zone-gemini" hidden>
         <button id="btn-photo-produit" class="secondaire">Photographier le produit pour l'identifier</button>
         <input type="file" id="photo-produit" accept="image/*" capture="environment">
@@ -267,6 +272,9 @@
           </div>
           <input type="file" id="f-fichier" accept="image/*">
         </div>
+        <label for="f-composition">Boîte assortie : produits contenus (facultatif)</label>
+        <textarea id="f-composition" class="composition" rows="3" placeholder="2 × Fusilli 500 g&#10;3 × Spaghetti 500 g"></textarea>
+        <p class="aide">Une ligne par produit. Si rempli, la boîte sera déballée automatiquement à chaque ajout.</p>
       </div>
       </div>
       </div>
@@ -451,6 +459,9 @@
             <select id="p-categorie"></select>
             <label for="p-contenu">Contenu du paquet (format familial)</label>
             <input id="p-contenu" type="text" placeholder="ex. 9 poitrines">
+            <label for="p-composition">Boîte assortie : produits contenus</label>
+            <textarea id="p-composition" class="composition" rows="3" placeholder="2 × Fusilli 500 g&#10;3 × Spaghetti 500 g"></textarea>
+            <p class="aide">Une ligne par produit (code-barre facultatif entre crochets : 3 × Spaghetti 500 g [8076809513388]). La boîte sera déballée automatiquement à chaque ajout.</p>
             <label for="p-emplacement">Emplacement habituel</label>
             <select id="p-emplacement">
               <option value="">—</option><option>Garde-manger</option><option>Frigo</option><option>Congélateur</option>
@@ -488,7 +499,7 @@
   </div>
 
 <script>
-  const VERSION = '0.20';
+  const VERSION = '0.21';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -684,6 +695,10 @@
     $('fiche-grille').classList.toggle('une-colonne', !montrerChamps);
     $('f-code').value = r.code;
     $('f-contenu').value = '';
+    $('f-composition').value = '';
+    const compo = p && p.composition ? p.composition : '';
+    $('f-boite').hidden = !compo || mode === 'retirer';
+    $('f-boite').textContent = compo ? 'Boîte assortie : elle sera déballée automatiquement. Par boîte :\n' + compo.replace(/\s*\[\d+\]/g, '') : '';
     r.imageChoisie = undefined;   // undefined = image trouvée (ou photo Gemini); '' = retirée; sinon image choisie
     majImageFiche(r);
     $('f-nom').value = p && !aCompleter ? (p.nom || '') : '';
@@ -704,7 +719,7 @@
     $('f-qte').value = 1;
     $('f-date').value = '';
     $('champ-date').hidden = mode === 'retirer';
-    $('btn-confirmer').textContent = mode === 'ajouter' ? 'Ajouter à l\'inventaire' : 'Retirer de l\'inventaire';
+    $('btn-confirmer').textContent = mode === 'retirer' ? 'Retirer de l\'inventaire' : p && p.composition ? 'Ajouter (déballer)' : 'Ajouter à l\'inventaire';
 
     $('zone-scan').hidden = true;
     $('fiche').hidden = false;
@@ -862,7 +877,7 @@
       const r = await appeler({
         action: 'completerFiche', code: courant.code, image: courant.imageChoisie || courant.imagePhoto || '',
         produit: { nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value,
-          contenu: $('f-contenu').value.trim() }
+          contenu: $('f-contenu').value.trim(), composition: $('f-composition').value.trim() }
       });
       fermerFiche();
       afficher('Complété : ' + r.nom + (r.lignesInventaire ? ' (quantités inchangées dans l\'inventaire)' : '') + '.', 'ok');
@@ -888,11 +903,13 @@
           nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value,
           // image : choisie (ou retirée, « - »), sinon la photo prise, sinon celle de la base où le produit a été trouvé
           image: imageAEnvoyer(courant),
-          contenu: $('champs-nouveau').hidden ? '' : $('f-contenu').value.trim()
+          contenu: $('champs-nouveau').hidden ? '' : $('f-contenu').value.trim(),
+          composition: $('champs-nouveau').hidden ? '' : $('f-composition').value.trim()
         }
       });
       const verbe = r.mode === 'ajouter' ? 'Ajouté' : 'Retiré';
-      afficher(verbe + ' : ' + r.quantite + ' × ' + r.nom + ' (' + r.emplacement + '). Il en reste ' + r.reste + '.', 'ok');
+      if (r.deballe) afficher('Boîte déballée (' + r.emplacement + ') : ' + r.deballe.map(x => x.quantite + ' × ' + x.nom).join(', ') + '.', 'ok');
+      else afficher(verbe + ' : ' + r.quantite + ' × ' + r.nom + ' (' + r.emplacement + '). Il en reste ' + r.reste + '.', 'ok');
       ajouterHistorique(r);
       fermerFiche();
     } catch (err) {
@@ -961,6 +978,7 @@
         if (t.type === 'ajout') {
           const r = await appeler({ action: 'rafale', code: l.code, emplacement: l.emp });
           l.nb++; l.nom = r.nom; l.statut = r.statut; l.image = r.image || l.image; l.erreur = '';
+          if (r.deballe) { l.nom = r.nom + ' (déballée)'; l.detail = r.deballe.map(x => x.quantite + ' × ' + x.nom).join(', '); }
           if (r.statut === 'à compléter' && l.nb === 1) bip(false);
         } else {
           await appeler({ action: 'annuler', code: l.code, mode: 'ajouter', quantite: 1, emplacement: l.emp, avant: null });
@@ -1020,7 +1038,7 @@
         : l.erreur ? (l.statut === 'à compléter' ? 'À compléter : ' : 'Erreur : ') + l.erreur
         : l.statut === 'recherche' ? 'Recherche…'
         : (l.statut === 'à compléter' ? 'Introuvable : prends-le en photo, ou complète-le plus tard · '
-          : l.complete ? 'Identifié par la photo · ' : '') + l.emp + (l.attente ? ' · envoi en cours…' : '');
+          : l.complete ? 'Identifié par la photo · ' : l.detail ? 'Par boîte : ' + l.detail + ' · ' : '') + l.emp + (l.attente ? ' · envoi en cours…' : '');
       infos.append(n, e);
       const moins = document.createElement('button'); moins.className = 'secondaire'; moins.textContent = '−';
       moins.disabled = l.nb <= 0;
@@ -1047,7 +1065,7 @@
     const ligne = document.createElement('div');
     ligne.className = 'entree';
     const texte = document.createElement('span');
-    texte.textContent = (r.mode === 'ajouter' ? '+' : '−') + r.quantite + '  ' + r.nom + '  ·  ' + r.emplacement;
+    texte.textContent = (r.mode === 'ajouter' ? '+' : '−') + r.quantite + '  ' + r.nom + (r.deballe ? ' (déballée)' : '') + '  ·  ' + r.emplacement;
     const btn = document.createElement('button');
     btn.className = 'secondaire';
     btn.textContent = 'Annuler';
@@ -1521,6 +1539,12 @@
       const n = document.createElement('div'); n.className = 'nom-produit'; n.textContent = p.nom;
       const sm = document.createElement('small'); sm.textContent = [p.marque, p.format].filter(Boolean).join(' · ');
       c1.append(n, sm);
+      if (p.composition) {
+        const bx = document.createElement('div'); bx.className = 'boite'; bx.style.fontSize = '13px';
+        const nb = p.composition.split('\n').filter(Boolean).length;
+        bx.textContent = 'Boîte assortie : ' + nb + ' produit(s), déballée automatiquement'; bx.title = p.composition;
+        c1.append(bx);
+      }
       td().textContent = p.categorie || '—';
       td().textContent = p.emplacement || '—';
       const cc = td(); cc.className = 'code'; cc.textContent = p.code || 'sans code';
@@ -1566,6 +1590,7 @@
     $('p-nom').value = p ? p.nom : ''; $('p-marque').value = p ? p.marque : ''; $('p-format').value = p ? p.format : '';
     $('p-code').value = p ? p.code : ''; $('p-categorie').value = p ? p.categorie : ''; $('p-emplacement').value = p ? p.emplacement : '';
     $('p-contenu').value = p ? p.contenu || '' : '';
+    $('p-composition').value = p ? p.composition || '' : '';
     montrerImage($('p-image'), p && p.image);
     $('p-sans-image').hidden = !(p && p.image);
     $('p-info').textContent = p && p.enInventaire
@@ -1612,6 +1637,7 @@
         produit: {
           nom: nom, marque: $('p-marque').value.trim(), format: $('p-format').value.trim(), code: code,
           categorie: $('p-categorie').value, emplacement: $('p-emplacement').value, contenu: $('p-contenu').value.trim(),
+          composition: $('p-composition').value.trim(),
           image: imageProduit   // absente si inchangée
         }
       });
