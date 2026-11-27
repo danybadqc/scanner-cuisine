@@ -136,6 +136,20 @@
   .r-ligne button.photo { order: 10; flex: 1 1 100%; width: 100%; margin-top: 4px; padding: 10px; font-size: 15px; background: #fef7e0; color: #b06000; }
   #rafale-photo { display: none; }
   #btn-completer { background: #fef7e0; color: #b06000; }
+  .article button.portionner { width: auto; margin: 4px 0 0; padding: 4px 10px; font-size: 13px; background: #e6f4ea; color: #137333; }
+  #form-portion { margin: 0 0 10px; }
+  .po-deux { display: flex; gap: 8px; }
+  .po-deux > div { flex: 1; min-width: 0; }
+  .po-groupe { border: 1px solid #e3e6ea; border-radius: 10px; padding: 8px 10px; margin-top: 8px; }
+  .po-groupe .rang { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+  .po-groupe .rang:first-child { margin-top: 0; }
+  .po-groupe input[type=number] { width: 70px; text-align: center; padding: 10px 6px; }
+  .po-groupe select, .po-groupe input[type=date] { flex: 1; min-width: 130px; width: auto; padding: 10px; }
+  .po-groupe button.retirer { width: 40px; margin: 0; padding: 8px; background: #fce8e6; color: #c5221f; }
+  #po-bilan { margin: 12px 0 0; padding: 10px; border-radius: 8px; font-weight: bold; }
+  #po-bilan.juste { background: #e6f4ea; color: #137333; }
+  #po-bilan.reste { background: #fef7e0; color: #b06000; }
+  #po-bilan.trop { background: #fce8e6; color: #c5221f; }
   #lien-cle { display: block; margin-top: 18px; text-align: center; color: #5f6368; font-size: 14px; }
 </style>
 </head>
@@ -266,6 +280,34 @@
 
     <div id="vue-inventaire" hidden>
       <button id="btn-ajout">+ Ajouter un produit</button>
+      <div id="form-portion" class="carte" hidden>
+        <h2 id="po-titre">Portionner</h2>
+        <p id="po-sous" class="sous"></p>
+        <div class="po-deux">
+          <div>
+            <label for="po-total">Nombre dans le paquet *</label>
+            <input id="po-total" type="number" inputmode="numeric" min="1">
+          </div>
+          <div>
+            <label for="po-unite">De quoi ?</label>
+            <input id="po-unite" type="text" placeholder="ex. poitrines">
+          </div>
+        </div>
+        <label for="po-utilise">Utilisé maintenant</label>
+        <div class="qte">
+          <button id="po-moins" class="secondaire">−</button>
+          <input id="po-utilise" type="number" inputmode="numeric" min="0" value="0">
+          <button id="po-plus" class="secondaire">+</button>
+        </div>
+        <label>Portions à ranger</label>
+        <div id="po-groupes"></div>
+        <button id="po-ajouter" class="secondaire">+ Ajouter d'autres portions</button>
+        <p id="po-bilan"></p>
+        <div class="boutons">
+          <button id="po-annuler" class="secondaire">Annuler</button>
+          <button id="po-confirmer">Confirmer</button>
+        </div>
+      </div>
       <div id="form-modif" class="carte" hidden>
         <h2>Modifier</h2>
         <p class="sous">Nom, marque, format et catégorie changent partout pour ce produit.</p>
@@ -286,6 +328,8 @@
         <input id="m-format" type="text">
         <label for="m-categorie">Catégorie</label>
         <select id="m-categorie"></select>
+        <label for="m-contenu">Contenu du paquet (format familial)</label>
+        <input id="m-contenu" type="text" placeholder="ex. 9 poitrines (laisser vide sinon)">
         <label>Emplacement</label>
         <div class="bascule" id="m-emplacement">
           <button data-v="Garde-manger">Garde-manger</button>
@@ -307,6 +351,7 @@
           <button id="m-annuler" class="secondaire">Annuler</button>
           <button id="m-enregistrer">Enregistrer</button>
         </div>
+        <button id="m-portionner" class="secondaire">Ouvrir et portionner un paquet</button>
         <button id="m-retirer">Retirer de l'inventaire</button>
       </div>
       <div id="form-ajout" class="carte" hidden>
@@ -373,6 +418,8 @@
           <div>
             <label for="p-categorie">Catégorie</label>
             <select id="p-categorie"></select>
+            <label for="p-contenu">Contenu du paquet (format familial)</label>
+            <input id="p-contenu" type="text" placeholder="ex. 9 poitrines">
             <label for="p-emplacement">Emplacement habituel</label>
             <select id="p-emplacement">
               <option value="">—</option><option>Garde-manger</option><option>Frigo</option><option>Congélateur</option>
@@ -410,7 +457,7 @@
   </div>
 
 <script>
-  const VERSION = '0.18';
+  const VERSION = '0.19';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -1055,6 +1102,11 @@
     }
     infos.append(nom, details);
     if (a.notes) { const n = document.createElement('div'); n.className = 'notes'; n.textContent = a.notes; infos.append(n); }
+    if (a.contenu && a.quantite > 0) {
+      const bp = document.createElement('button'); bp.className = 'portionner'; bp.textContent = 'Portionner (' + a.contenu + ')';
+      bp.onclick = ev => { ev.stopPropagation(); ouvrirPortion(a); };
+      infos.append(bp);
+    }
     infos.onclick = () => ouvrirModif(a);
 
     let image;
@@ -1259,6 +1311,7 @@
     enModif = a;
     $('m-nom').value = a.nom; $('m-marque').value = a.marque; $('m-format').value = a.format;
     $('m-categorie').value = a.categorie || '';
+    $('m-contenu').value = a.contenu || '';
     empModif = a.emplacement; bascule('m-emplacement', empModif); majInfoEmp();
     $('m-qte').value = a.quantite; $('m-date').value = a.dateLimite || ''; $('m-notes').value = a.notes || '';
     imageModif = undefined;
@@ -1269,7 +1322,7 @@
     $('form-modif').hidden = false;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-  function fermerModif() { enModif = null; $('form-modif').hidden = true; $('btn-ajout').hidden = false; }
+  function fermerModif() { enModif = null; $('form-modif').hidden = true; $('btn-ajout').hidden = !$('form-portion').hidden; }
 
   function majInfoEmp() {
     if (!enModif || empModif === enModif.emplacement) { $('m-info-emp').textContent = ''; return; }
@@ -1316,6 +1369,7 @@
         nouveau: {
           nom: nom, marque: $('m-marque').value.trim(), format: $('m-format').value.trim(), categorie: $('m-categorie').value,
           emplacement: empModif, quantite: parseInt($('m-qte').value) || 1, dateLimite: $('m-date').value || '', notes: $('m-notes').value.trim(),
+          contenu: $('m-contenu').value.trim(),
           image: imageModif   // absent du JSON si inchangée
         }
       });
@@ -1442,6 +1496,7 @@
     $('p-titre').textContent = p ? 'Modifier « ' + p.nom + ' »' : 'Nouveau produit';
     $('p-nom').value = p ? p.nom : ''; $('p-marque').value = p ? p.marque : ''; $('p-format').value = p ? p.format : '';
     $('p-code').value = p ? p.code : ''; $('p-categorie').value = p ? p.categorie : ''; $('p-emplacement').value = p ? p.emplacement : '';
+    $('p-contenu').value = p ? p.contenu || '' : '';
     montrerImage($('p-image'), p && p.image);
     $('p-sans-image').hidden = !(p && p.image);
     $('p-info').textContent = p && p.enInventaire
@@ -1487,7 +1542,7 @@
         action: 'enregistrerProduit', ligne: p ? p.ligne : 0, avant: p ? { code: p.code, nom: p.nom } : null,
         produit: {
           nom: nom, marque: $('p-marque').value.trim(), format: $('p-format').value.trim(), code: code,
-          categorie: $('p-categorie').value, emplacement: $('p-emplacement').value,
+          categorie: $('p-categorie').value, emplacement: $('p-emplacement').value, contenu: $('p-contenu').value.trim(),
           image: imageProduit   // absente si inchangée
         }
       });
@@ -1500,6 +1555,132 @@
     finally { $('p-enregistrer').disabled = false; }
   };
   $('form-produit').addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') { ev.preventDefault(); $('p-enregistrer').onclick(); } });
+
+  // ---------- Portionner un paquet familial ----------
+  // Durées suggérées (jours) selon la catégorie et l'emplacement; modifiables dans le formulaire
+  const DUREES = {
+    'Viandes et poissons': { 'Frigo': 2, 'Congélateur': 90 },
+    'Produits laitiers et œufs': { 'Frigo': 7, 'Congélateur': 60 },
+    'Fruits et légumes': { 'Garde-manger': 5, 'Frigo': 5, 'Congélateur': 240 },
+    'Boulangerie': { 'Garde-manger': 4, 'Frigo': 7, 'Congélateur': 90 },
+    'Surgelés': { 'Frigo': 2, 'Congélateur': 180 },
+    '': { 'Frigo': 4, 'Congélateur': 90 }
+  };
+  function dateSuggeree(categorie, emp) {
+    const jours = (DUREES[categorie] || DUREES[''])[emp];
+    if (!jours) return '';
+    const d = new Date(); d.setDate(d.getDate() + jours);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  let enPortion = null, groupesPortion = [];
+  async function ouvrirPortion(a) {
+    if (a.enAttente || a.envoiEnCours) await envoyer(a);
+    if (!articles.includes(a)) return;
+    enPortion = a;
+    const m = /^\s*(\d+)\s*(.*)$/.exec(a.contenu || '');
+    $('po-titre').textContent = 'Portionner : ' + a.nom;
+    $('po-sous').textContent = 'Un paquet sera retiré du ' + a.emplacement.toLowerCase() + ' (il y en a ' + a.quantite + ').';
+    $('po-total').value = m ? m[1] : '';
+    $('po-unite').value = m ? m[2].trim() : '';
+    $('po-utilise').value = 0;
+    const total = m ? Number(m[1]) : 1;
+    groupesPortion = [{ nombre: 1, taille: total, emp: 'Congélateur', date: dateSuggeree(a.categorie, 'Congélateur'), dateManuelle: false }];
+    dessinerGroupes();
+    fermerModif(); $('form-ajout').hidden = true;
+    $('form-portion').hidden = false; $('btn-ajout').hidden = true;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!m) $('po-total').focus();
+  }
+  function fermerPortion() { enPortion = null; $('form-portion').hidden = true; $('btn-ajout').hidden = false; }
+
+  function dessinerGroupes() {
+    const zone = $('po-groupes');
+    zone.innerHTML = '';
+    groupesPortion.forEach((g, k) => {
+      const box = document.createElement('div'); box.className = 'po-groupe';
+      const r1 = document.createElement('div'); r1.className = 'rang';
+      const nb = document.createElement('input'); nb.type = 'number'; nb.min = 1; nb.inputMode = 'numeric'; nb.value = g.nombre;
+      nb.oninput = () => { g.nombre = parseInt(nb.value) || 0; bilanPortion(); };
+      const t1 = document.createElement('span'); t1.textContent = 'portion(s) de';
+      const tl = document.createElement('input'); tl.type = 'number'; tl.min = 1; tl.inputMode = 'numeric'; tl.value = g.taille;
+      tl.oninput = () => { g.taille = parseInt(tl.value) || 0; bilanPortion(); };
+      const t2 = document.createElement('span'); t2.className = 'unite-groupe'; t2.textContent = $('po-unite').value.trim();
+      r1.append(nb, t1, tl, t2);
+      if (groupesPortion.length > 1) {
+        const x = document.createElement('button'); x.className = 'retirer'; x.textContent = '×'; x.title = 'Retirer ce groupe';
+        x.onclick = () => { groupesPortion.splice(k, 1); dessinerGroupes(); };
+        r1.append(x);
+      }
+      const r2 = document.createElement('div'); r2.className = 'rang';
+      const sel = document.createElement('select');
+      ['Congélateur', 'Frigo', 'Garde-manger'].forEach(e => sel.append(new Option(e, e)));
+      sel.value = g.emp;
+      const dt = document.createElement('input'); dt.type = 'date'; dt.value = g.date; dt.title = 'Date limite (suggérée, modifiable)';
+      sel.onchange = () => {
+        g.emp = sel.value;
+        if (!g.dateManuelle) { g.date = dateSuggeree(enPortion && enPortion.categorie, g.emp); dt.value = g.date; }
+      };
+      dt.oninput = () => { g.date = dt.value; g.dateManuelle = true; };
+      r2.append(sel, dt);
+      box.append(r1, r2);
+      zone.append(box);
+    });
+    bilanPortion();
+  }
+
+  function bilanPortion() {
+    const total = parseInt($('po-total').value) || 0;
+    const utilise = Math.max(0, parseInt($('po-utilise').value) || 0);
+    const enPortions = groupesPortion.reduce((n, g) => n + Math.max(0, g.nombre) * Math.max(0, g.taille), 0);
+    const u = $('po-unite').value.trim() || 'unité(s)';
+    document.querySelectorAll('.unite-groupe').forEach(e => e.textContent = $('po-unite').value.trim());
+    const b = $('po-bilan');
+    const somme = utilise + ' utilisé(s) + ' + enPortions + ' en portions = ' + (utilise + enPortions);
+    let ok = true;
+    if (!total) { b.className = 'reste'; b.textContent = 'Indique combien il y a de ' + u + ' dans le paquet.'; ok = false; }
+    else if (utilise + enPortions > total) { b.className = 'trop'; b.textContent = somme + ' : c\'est plus que les ' + total + ' ' + u + ' du paquet.'; ok = false; }
+    else if (utilise + enPortions < total) { b.className = 'reste'; b.textContent = somme + ' sur ' + total + ' : il en reste ' + (total - utilise - enPortions) + ' sans portion (non rangé).'; }
+    else { b.className = 'juste'; b.textContent = somme + ' ' + u + ' ✓'; }
+    if (groupesPortion.some(g => g.nombre < 1 || g.taille < 1)) ok = false;
+    $('po-confirmer').disabled = !ok;
+  }
+
+  $('po-total').oninput = bilanPortion;
+  $('po-unite').oninput = bilanPortion;
+  $('po-utilise').oninput = bilanPortion;
+  $('po-moins').onclick = () => { $('po-utilise').value = Math.max(0, (parseInt($('po-utilise').value) || 0) - 1); bilanPortion(); };
+  $('po-plus').onclick = () => { $('po-utilise').value = (parseInt($('po-utilise').value) || 0) + 1; bilanPortion(); };
+  $('po-ajouter').onclick = () => {
+    const dernier = groupesPortion[groupesPortion.length - 1];
+    const emp = dernier ? dernier.emp : 'Congélateur';
+    groupesPortion.push({ nombre: 1, taille: dernier ? dernier.taille : 1, emp: emp, date: dateSuggeree(enPortion && enPortion.categorie, emp), dateManuelle: false });
+    dessinerGroupes();
+  };
+  $('po-annuler').onclick = () => { fermerPortion(); afficherInv('Portionnement annulé.', 'info'); };
+  $('m-portionner').onclick = () => { const a = enModif; if (a) ouvrirPortion(a); };
+
+  $('po-confirmer').onclick = async () => {
+    const a = enPortion;
+    if (!a) return;
+    $('po-confirmer').disabled = true;
+    afficherInv('Enregistrement…', 'info');
+    try {
+      const r = await appeler({
+        action: 'portionner', ligne: a.ligne, nom: a.nom, emplacement: a.emplacement, code: a.code,
+        total: parseInt($('po-total').value) || 0, unite: $('po-unite').value.trim(), utilise: parseInt($('po-utilise').value) || 0,
+        portions: groupesPortion.map(g => ({ nombre: g.nombre, taille: g.taille, emplacement: g.emp, dateLimite: g.date }))
+      });
+      fermerPortion();
+      await chargerInventaire();
+      afficherInv('Paquet ouvert : ' + r.utilise + ' utilisé(s)' +
+        r.portions.map(p => ', ' + p.nombre + ' × portion de ' + p.nom.split('portion de ')[1] + ' au ' + p.emplacement.toLowerCase()).join('') +
+        (r.nonRange ? ', ' + r.nonRange + ' non rangé(s)' : '') + '.', 'ok');
+    } catch (err) {
+      afficherInv('Erreur : ' + err.message, 'erreur');
+      $('po-confirmer').disabled = false;
+    }
+  };
 
   window.addEventListener('pagehide', () => { envoyerTout(true); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) envoyerTout(true); });
