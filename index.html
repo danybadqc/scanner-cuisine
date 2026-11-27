@@ -77,6 +77,9 @@
   #diagnostic small { color: #5f6368; }
   #btn-oublier { background: #fff8e1; color: #b06000; border: 1px dashed #f9ab00; font-size: 15px; }
   #btn-oublier.confirmer { background: #d93025; color: #fff; border-color: #d93025; }
+  #btn-vider { background: #fff8e1; color: #b06000; border: 1px dashed #f9ab00; font-size: 15px; margin: 16px 0 0; }
+  #btn-vider.etape1 { background: #fce8e6; color: #c5221f; border-color: #d93025; }
+  #btn-vider.etape2 { background: #d93025; color: #fff; border-color: #d93025; }
   #lien-dev { display: block; margin-top: 8px; text-align: center; color: #5f6368; font-size: 14px; }
   #version { text-align: center; color: #9aa0a6; font-size: 12px; margin: 8px 0 0; }
   .vignette { width: 48px; height: 48px; flex: none; border-radius: 8px; object-fit: contain; background: #f1f3f4; cursor: pointer; }
@@ -432,6 +435,7 @@
       </div>
       <div id="message-inv" class="info">Chargement…</div>
       <div id="liste-inv"></div>
+      <button id="btn-vider" hidden>Vider tout l'inventaire (mode développement)</button>
     </div>
 
     <div id="vue-produits" hidden>
@@ -499,7 +503,7 @@
   </div>
 
 <script>
-  const VERSION = '0.22';
+  const VERSION = '0.23';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -534,6 +538,7 @@
     ev.preventDefault();
     try { localStorage.setItem('modeDev', modeDev() ? '0' : '1'); } catch (e) {}
     majLienDev();
+    majBoutonVider();
     afficher(modeDev() ? 'Mode développement activé : chaque scan interroge toutes les bases (UPCitemdb : 100 recherches par jour).' : 'Mode développement désactivé.', 'info');
   };
 
@@ -1115,6 +1120,7 @@
       dessinerInventaire();
       afficherInv(articles.length ? articles.length + ' produit(s) en inventaire. Touche un produit pour le modifier.' : 'L\'inventaire est vide.', 'info');
       if (r.imagesACompleter) completerImages();
+      majBoutonVider();
     } catch (err) {
       afficherInv('Erreur : ' + err.message, 'erreur');
     }
@@ -1652,6 +1658,46 @@
     finally { $('p-enregistrer').disabled = false; }
   };
   $('form-produit').addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') { ev.preventDefault(); $('p-enregistrer').onclick(); } });
+
+  // ---------- Mode développement : vider tout l'inventaire (3 pressions) ----------
+  let viderEtape = 0, viderMinuterie = null;
+  function majBoutonVider() {
+    $('btn-vider').hidden = !modeDev() || !articles.length;
+    viderReset();
+  }
+  function viderReset() {
+    clearTimeout(viderMinuterie); viderEtape = 0;
+    $('btn-vider').textContent = 'Vider tout l\'inventaire (mode développement)';
+    $('btn-vider').className = '';
+  }
+  $('btn-vider').onclick = async () => {
+    if (!modeDev()) return;
+    clearTimeout(viderMinuterie);
+    viderMinuterie = setTimeout(viderReset, 5000);   // 5 s sans pression : on recommence à zéro
+    const unites = articles.reduce((n, a) => n + a.quantite, 0);
+    if (viderEtape === 0) {
+      viderEtape = 1; $('btn-vider').className = 'etape1';
+      $('btn-vider').textContent = 'Appuie encore 2 fois pour vider (' + articles.length + ' produit(s), ' + unites + ' unité(s))';
+      return;
+    }
+    if (viderEtape === 1) {
+      viderEtape = 2; $('btn-vider').className = 'etape2';
+      $('btn-vider').textContent = 'Dernière pression : tout l\'inventaire sera vidé';
+      return;
+    }
+    viderReset();
+    $('btn-vider').disabled = true;
+    try {
+      await envoyerTout();
+      const r = await appeler({ action: 'viderInventaire', confirmation: 'VIDER' });
+      await chargerInventaire();
+      afficherInv('Inventaire vidé : ' + r.lignes + ' ligne(s), ' + r.unites + ' unité(s). La liste des produits n\'a pas changé.', 'ok');
+    } catch (err) {
+      afficherInv('Erreur : ' + err.message, 'erreur');
+    } finally {
+      $('btn-vider').disabled = false;
+    }
+  };
 
   // ---------- Portionner un paquet familial ----------
   // Durées suggérées (jours) selon la catégorie et l'emplacement; modifiables dans le formulaire
