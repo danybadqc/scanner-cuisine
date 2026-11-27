@@ -499,7 +499,7 @@
   </div>
 
 <script>
-  const VERSION = '0.21';
+  const VERSION = '0.22';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
@@ -1463,7 +1463,8 @@
       produitsConnus = null;   // les noms ont pu changer
       fermerModif();
       await chargerInventaire();
-      afficherInv('Modifié : ' + r.nom + (r.fusion ? ' (regroupé au ' + r.emplacement.toLowerCase() + ')' : '') + '.', 'ok');
+      afficherInv('Modifié : ' + r.nom + (r.fusion ? ' (regroupé au ' + r.emplacement.toLowerCase() + ')' : '') + '.' +
+        (r.compositions ? ' Composition de ' + r.compositions + ' boîte(s) assortie(s) mise à jour.' : ''), 'ok');
     } catch (err) {
       afficherInv('Erreur : ' + err.message, 'erreur');
     } finally {
@@ -1645,7 +1646,8 @@
       fermerProduit();
       await chargerCatalogue();
       afficherProd((r.nouveau ? 'Ajouté : ' : 'Modifié : ') + r.nom +
-        (r.lignesInventaire ? ' (' + r.lignesInventaire + ' ligne(s) d\'inventaire mises à jour)' : '') + '.', 'ok');
+        (r.lignesInventaire ? ' (' + r.lignesInventaire + ' ligne(s) d\'inventaire mises à jour)' : '') +
+        (r.compositions ? ' Composition de ' + r.compositions + ' boîte(s) assortie(s) mise à jour' : '') + '.', 'ok');
     } catch (err) { afficherProd('Erreur : ' + err.message, 'erreur'); }
     finally { $('p-enregistrer').disabled = false; }
   };
