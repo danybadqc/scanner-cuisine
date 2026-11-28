@@ -247,21 +247,11 @@
       <div>
       <div id="champ-categorie">
         <label for="f-categorie">Catégorie</label>
-        <select id="f-categorie">
-          <option value="">— Choisir —</option>
-          <option>Viandes et poissons</option>
-          <option>Fruits et légumes</option>
-          <option>Produits laitiers et œufs</option>
-          <option>Boulangerie</option>
-          <option>Pâtes, riz et céréales</option>
-          <option>Conserves</option>
-          <option>Sauces et condiments</option>
-          <option>Épices et assaisonnements</option>
-          <option>Surgelés</option>
-          <option>Collations</option>
-          <option>Boissons</option>
-          <option>Autre</option>
-        </select>
+        <select id="f-categorie"></select>
+        <div id="f-sous-zone" hidden>
+          <label for="f-sous">Sous-catégorie</label>
+          <select id="f-sous"></select>
+        </div>
       </div>
       <div id="champs-nouveau" hidden>
         <label for="f-contenu">Contenu du paquet (format familial)</label>
@@ -370,6 +360,10 @@
         <input id="m-format" type="text">
         <label for="m-categorie">Catégorie</label>
         <select id="m-categorie"></select>
+        <div id="m-sous-zone" hidden>
+          <label for="m-sous">Sous-catégorie</label>
+          <select id="m-sous"></select>
+        </div>
         <label for="m-contenu">Contenu du paquet (format familial)</label>
         <input id="m-contenu" type="text" placeholder="ex. 9 poitrines (laisser vide sinon)">
         <label>Emplacement</label>
@@ -409,6 +403,10 @@
           <input id="a-format" type="text" placeholder="ex. 1 kg, 6 unités">
           <label for="a-categorie">Catégorie *</label>
           <select id="a-categorie"></select>
+          <div id="a-sous-zone" hidden>
+            <label for="a-sous">Sous-catégorie</label>
+            <select id="a-sous"></select>
+          </div>
         </div>
         <label>Emplacement</label>
         <div class="bascule" id="a-emplacement">
@@ -461,6 +459,10 @@
           <div>
             <label for="p-categorie">Catégorie</label>
             <select id="p-categorie"></select>
+            <div id="p-sous-zone" hidden>
+              <label for="p-sous">Sous-catégorie</label>
+              <select id="p-sous"></select>
+            </div>
             <label for="p-contenu">Contenu du paquet (format familial)</label>
             <input id="p-contenu" type="text" placeholder="ex. 9 poitrines">
             <label for="p-composition">Boîte assortie : produits contenus</label>
@@ -503,11 +505,46 @@
   </div>
 
 <script>
-  const VERSION = '0.23';
+  const VERSION = '0.24';
   const EMPLACEMENTS = ['Garde-manger', 'Frigo', 'Congélateur'];
   const URL_SCRIPT = 'https://script.google.com/macros/s/AKfycbyecdctXiXUCFCJG8vZOe7R4xSZ8X5t-KrLKnfrnUo9-KEGZGxA-msCBjgMhyifPVA0/exec';
   const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e']; // codes-barres des produits d'épicerie
   const $ = id => document.getElementById(id);
+
+  // ---------- Catégories et sous-catégories (0.24) ----------
+  // La même liste est dans le script Google (Code.gs, CATEGORIES_ARBRE) : les garder identiques.
+  const CATEGORIES_ARBRE = {
+    'Fruits et Légumes': ['Fruits', 'Légumes', 'Fines herbes fraîches', 'Salades et légumes pour sautés emballés'],
+    'Produits laitiers et œufs': ['Laits, Crèmes et Beurres', 'Oeufs', 'Yogourts', 'Fromages', 'Crèmes sures et trempettes'],
+    'Garde-Manger': ['Ingrédients pour cuisson et préparation', 'Aliments en conserve et en pot', 'Céréales, tartinades et sirops',
+      'Condiments et garnitures', 'Fines herbes, épices et sauces', 'Huiles, vinaigres et vinaigrettes', "Plats d'accompagnements",
+      'Pâtes, riz et fèves'],
+    'Plats cuisinés': ['Prêt-à-manger', 'Prêt-à-cuire'],
+    'Boissons': ['Café, thés et tisanes', 'Jus', 'Boissons gazeuses', 'Boissons sportives et énergisantes', 'Bières, Cidres et Vins'],
+    'Viande et volailles': [], 'Collations': [], 'Produits surgelés': [], 'Pains et pâtisseries': [],
+    'Charcuteries et plats préparés': [], 'Poissons et fruits de mer': [], 'Cuisine du monde': [],
+    'Entretien ménager et nettoyage': [], 'Soins et beauté': [], 'Pharmacie': []
+  };
+  (function () {
+    const sel = $('f-categorie');
+    sel.append(new Option('— Choisir —', ''));
+    Object.keys(CATEGORIES_ARBRE).forEach(c => sel.append(new Option(c, c)));
+  })();
+  // Le menu Sous-catégorie (préfixe f, m, a ou p) suit la catégorie choisie; caché s'il n'y en a pas
+  function majSous(pre, sous) {
+    const liste = CATEGORIES_ARBRE[$(pre + '-categorie').value] || [];
+    const sel = $(pre + '-sous');
+    sel.innerHTML = '';
+    sel.append(new Option('— Choisir —', ''));
+    liste.forEach(sc => sel.append(new Option(sc, sc)));
+    sel.value = liste.includes(sous) ? sous : '';
+    $(pre + '-sous-zone').hidden = !liste.length;
+  }
+  function choisirCategorie(pre, cat, sous) {
+    $(pre + '-categorie').value = CATEGORIES_ARBRE[cat] ? cat : '';
+    majSous(pre, sous || '');
+  }
+  const texteCategorie = (cat, sous) => cat ? cat + (sous ? ' › ' + sous : '') : '';
 
   const video = $('video');
   let detecteur = null, flux = null;
@@ -713,7 +750,7 @@
     $('f-format').value = p ? (p.format || '') : '';
 
     // Catégorie : cachée si elle vient de ta liste; préremplie (à vérifier) si elle a été devinée d'après une base
-    $('f-categorie').value = p && p.categorie ? p.categorie : '';
+    choisirCategorie('f', p && p.categorie, p && p.sousCategorie);
     $('champ-categorie').hidden = mode === 'retirer' || !!(p && p.categorie && r.source === 'produits' && !aCompleter);
 
     // Emplacement par défaut
@@ -831,7 +868,7 @@
       if (r.produit.nom) $('f-nom').value = r.produit.nom;
       if (r.produit.marque) $('f-marque').value = r.produit.marque;
       if (r.produit.format) $('f-format').value = r.produit.format;
-      if (r.produit.categorie && !$('f-categorie').value) $('f-categorie').value = r.produit.categorie;
+      if (r.produit.categorie && !$('f-categorie').value) choisirCategorie('f', r.produit.categorie, r.produit.sousCategorie);
       if (!fiche.source) fiche.source = 'photo';
       afficher('Produit identifié sur la photo. Vérifie le nom, la marque et le format, puis confirme.', 'ok');
     } catch (err) {
@@ -882,6 +919,7 @@
       const r = await appeler({
         action: 'completerFiche', code: courant.code, image: courant.imageChoisie || courant.imagePhoto || '',
         produit: { nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value,
+          sousCategorie: $('f-sous').value,
           contenu: $('f-contenu').value.trim(), composition: $('f-composition').value.trim() }
       });
       fermerFiche();
@@ -906,6 +944,7 @@
         quantite: parseInt($('f-qte').value) || 1, emplacement: emplacement, dateLimite: $('f-date').value || '',
         produit: {
           nom: nom, marque: $('f-marque').value.trim(), format: $('f-format').value.trim(), categorie: $('f-categorie').value,
+          sousCategorie: $('f-sous').value,
           // image : choisie (ou retirée, « - »), sinon la photo prise, sinon celle de la base où le produit a été trouvé
           image: imageAEnvoyer(courant),
           contenu: $('champs-nouveau').hidden ? '' : $('f-contenu').value.trim(),
@@ -1299,11 +1338,12 @@
   let choisi = null;           // produit connu choisi dans les suggestions
   let empAjout = '';
   $('a-categorie').innerHTML = $('f-categorie').innerHTML;
+  ['f', 'a', 'm', 'p'].forEach(pre => { $(pre + '-categorie').addEventListener('change', () => majSous(pre, '')); });
 
   async function ouvrirAjout() {
     choisi = null; empAjout = '';
     ['a-nom', 'a-marque', 'a-format', 'a-date'].forEach(id => $(id).value = '');
-    $('a-categorie').value = ''; $('a-qte').value = 1;
+    choisirCategorie('a', '', ''); $('a-qte').value = 1;
     bascule('a-emplacement', '');
     $('suggestions').innerHTML = '';
     majInfo();
@@ -1372,8 +1412,8 @@
     if (!empAjout) { afficherInv('Choisis l\'emplacement.', 'erreur'); return; }
     if (!choisi && !$('a-categorie').value) { afficherInv('Choisis la catégorie.', 'erreur'); return; }
     const produit = choisi
-      ? { nom: choisi.nom, marque: choisi.marque, format: choisi.format, categorie: choisi.categorie }
-      : { nom: nom, marque: $('a-marque').value.trim(), format: $('a-format').value.trim(), categorie: $('a-categorie').value };
+      ? { nom: choisi.nom, marque: choisi.marque, format: choisi.format, categorie: choisi.categorie, sousCategorie: choisi.sousCategorie || '' }
+      : { nom: nom, marque: $('a-marque').value.trim(), format: $('a-format').value.trim(), categorie: $('a-categorie').value, sousCategorie: $('a-sous').value };
     $('a-confirmer').disabled = true;
     afficherInv('Ajout en cours…', 'info');
     try {
@@ -1403,7 +1443,7 @@
     if (!articles.includes(a)) return;                      // la ligne a disparu entre-temps
     enModif = a;
     $('m-nom').value = a.nom; $('m-marque').value = a.marque; $('m-format').value = a.format;
-    $('m-categorie').value = a.categorie || '';
+    choisirCategorie('m', a.categorie, a.sousCategorie);
     $('m-contenu').value = a.contenu || '';
     empModif = a.emplacement; bascule('m-emplacement', empModif); majInfoEmp();
     $('m-qte').value = a.quantite; $('m-date').value = a.dateLimite || ''; $('m-notes').value = a.notes || '';
@@ -1461,6 +1501,7 @@
         action: 'modifier', ligne: a.ligne, nom: a.nom, emplacement: a.emplacement, code: a.code,
         nouveau: {
           nom: nom, marque: $('m-marque').value.trim(), format: $('m-format').value.trim(), categorie: $('m-categorie').value,
+          sousCategorie: $('m-sous').value,
           emplacement: empModif, quantite: parseInt($('m-qte').value) || 1, dateLimite: $('m-date').value || '', notes: $('m-notes').value.trim(),
           contenu: $('m-contenu').value.trim(),
           image: imageModif   // absent du JSON si inchangée
@@ -1508,7 +1549,10 @@
   // ---------- Onglet Produits (gestion de la liste, sur grand écran) ----------
   let catalogue = [], triProduits = 'nom', enEdition = null, imageProduit;
   $('p-categorie').innerHTML = $('f-categorie').innerHTML;
-  [...$('f-categorie').options].slice(1).forEach(o => $('filtre-categorie').append(new Option(o.value, o.value)));
+  Object.keys(CATEGORIES_ARBRE).forEach(c => {
+    $('filtre-categorie').append(new Option(c, c));
+    CATEGORIES_ARBRE[c].forEach(sc => $('filtre-categorie').append(new Option('\u00a0\u00a0\u00a0› ' + sc, c + '›' + sc)));
+  });
   $('filtre-categorie').append(new Option('(sans catégorie)', '-'));
   $('filtre-categorie').append(new Option('(à compléter)', 'ac'));
   function afficherProd(texte, type) { $('message-prod').textContent = texte; $('message-prod').className = type; }
@@ -1527,7 +1571,8 @@
     const cat = $('filtre-categorie').value;
     const lignes = catalogue
       .filter(p => !filtre || sansAccents([p.nom, p.marque, p.format, p.code].join(' ')).includes(filtre))
-      .filter(p => !cat || (cat === 'ac' ? estACompleter(p.nom) : cat === '-' ? !p.categorie : p.categorie === cat))
+      .filter(p => !cat || (cat === 'ac' ? estACompleter(p.nom) : cat === '-' ? !p.categorie
+        : cat.includes('›') ? p.categorie + '›' + (p.sousCategorie || '') === cat : p.categorie === cat))
       .sort((a, b) => triProduits === 'enInventaire' ? b.enInventaire - a.enInventaire
         : String(a[triProduits] || '\uffff').localeCompare(String(b[triProduits] || '\uffff'), 'fr') || a.nom.localeCompare(b.nom, 'fr'));
     const corps = document.querySelector('#table-produits tbody');
@@ -1552,7 +1597,7 @@
         bx.textContent = 'Boîte assortie : ' + nb + ' produit(s), déballée automatiquement'; bx.title = p.composition;
         c1.append(bx);
       }
-      td().textContent = p.categorie || '—';
+      td().textContent = texteCategorie(p.categorie, p.sousCategorie) || '—';
       td().textContent = p.emplacement || '—';
       const cc = td(); cc.className = 'code'; cc.textContent = p.code || 'sans code';
       td().textContent = p.enInventaire ? p.enInventaire : '—';
@@ -1595,7 +1640,7 @@
     imageProduit = undefined;
     $('p-titre').textContent = p ? 'Modifier « ' + p.nom + ' »' : 'Nouveau produit';
     $('p-nom').value = p ? p.nom : ''; $('p-marque').value = p ? p.marque : ''; $('p-format').value = p ? p.format : '';
-    $('p-code').value = p ? p.code : ''; $('p-categorie').value = p ? p.categorie : ''; $('p-emplacement').value = p ? p.emplacement : '';
+    $('p-code').value = p ? p.code : ''; choisirCategorie('p', p && p.categorie, p && p.sousCategorie); $('p-emplacement').value = p ? p.emplacement : '';
     $('p-contenu').value = p ? p.contenu || '' : '';
     $('p-composition').value = p ? p.composition || '' : '';
     montrerImage($('p-image'), p && p.image);
@@ -1643,7 +1688,7 @@
         action: 'enregistrerProduit', ligne: p ? p.ligne : 0, avant: p ? { code: p.code, nom: p.nom } : null,
         produit: {
           nom: nom, marque: $('p-marque').value.trim(), format: $('p-format').value.trim(), code: code,
-          categorie: $('p-categorie').value, emplacement: $('p-emplacement').value, contenu: $('p-contenu').value.trim(),
+          categorie: $('p-categorie').value, sousCategorie: $('p-sous').value, emplacement: $('p-emplacement').value, contenu: $('p-contenu').value.trim(),
           composition: $('p-composition').value.trim(),
           image: imageProduit   // absente si inchangée
         }
@@ -1702,11 +1747,14 @@
   // ---------- Portionner un paquet familial ----------
   // Durées suggérées (jours) selon la catégorie et l'emplacement; modifiables dans le formulaire
   const DUREES = {
-    'Viandes et poissons': { 'Frigo': 2, 'Congélateur': 90 },
+    'Viande et volailles': { 'Frigo': 2, 'Congélateur': 90 },
+    'Poissons et fruits de mer': { 'Frigo': 2, 'Congélateur': 90 },
+    'Charcuteries et plats préparés': { 'Frigo': 5, 'Congélateur': 60 },
+    'Plats cuisinés': { 'Frigo': 3, 'Congélateur': 90 },
     'Produits laitiers et œufs': { 'Frigo': 7, 'Congélateur': 60 },
-    'Fruits et légumes': { 'Garde-manger': 5, 'Frigo': 5, 'Congélateur': 240 },
-    'Boulangerie': { 'Garde-manger': 4, 'Frigo': 7, 'Congélateur': 90 },
-    'Surgelés': { 'Frigo': 2, 'Congélateur': 180 },
+    'Fruits et Légumes': { 'Garde-manger': 5, 'Frigo': 5, 'Congélateur': 240 },
+    'Pains et pâtisseries': { 'Garde-manger': 4, 'Frigo': 7, 'Congélateur': 90 },
+    'Produits surgelés': { 'Frigo': 2, 'Congélateur': 180 },
     '': { 'Frigo': 4, 'Congélateur': 90 }
   };
   function dateSuggeree(categorie, emp) {
